@@ -1,0 +1,51 @@
+# Git
+.git
+.gitignore
+
+# Configs sensíveis
+.env
+.env.*
+docker/*.env
+
+# Logs
+*.log
+
+# IDEs
+.vscode
+.idea
+*.swp
+*.sublime*
+
+# Node / Frontend
+node_modules
+dist
+build
+.cache
+
+# Python
+__pycache__
+*.py[cod]
+.venv
+venv
+env
+*.egg-info
+
+# Go
+bin/
+pkg/
+*.exe
+*.out
+*.test
+
+# Docker
+.dockerignore
+Dockerfile
+docker-compose.override.yml
+
+# Outros
+*.tmp
+*.bak
+*.sqlite
+*.db
+*.db-journal
+*.drawio.bkp

@@ -1,0 +1,7 @@
+CREATE TABLE IF NOT EXISTS acc_transaction (
+    id SERIAL PRIMARY KEY,
+    description VARCHAR(50) NOT NULL,
+    amount NUMERIC(10, 2) NOT NULL,
+    date DATE NOT NULL,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+);
