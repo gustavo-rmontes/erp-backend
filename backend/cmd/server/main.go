@@ -34,6 +34,7 @@ func main() {
 	if _, err := logger.InitLogger(); err != nil {
 		log.Fatalf("Erro ao inicializar logger: %v", err)
 	}
+	defer logger.Logger.Sync()
 
 	// Carrega configurações do .env
 	cfg, err := config.LoadConfig()
