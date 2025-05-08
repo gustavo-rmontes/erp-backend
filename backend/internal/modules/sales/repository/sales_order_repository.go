@@ -13,6 +13,10 @@ import (
 	"gorm.io/gorm"
 )
 
+func (r *gormSalesOrderRepository) GetDB() *gorm.DB {
+	return r.db
+}
+
 // SalesOrderRepository define a interface para operações de repositório de pedidos de venda
 type SalesOrderRepository interface {
 	// Operações CRUD básicas
@@ -26,9 +30,16 @@ type SalesOrderRepository interface {
 	GetSalesOrdersByStatus(status string, params *pagination.PaginationParams) (*pagination.PaginatedResult, error)
 	GetSalesOrdersByContact(contactID int, params *pagination.PaginationParams) (*pagination.PaginatedResult, error)
 	GetSalesOrdersByQuotation(quotationID int) (*models.SalesOrder, error)
+
+	// Novos métodos para busca otimizada
+	SearchSalesOrders(query string, params *pagination.PaginationParams) (*pagination.PaginatedResult, error)
+	GetSalesOrdersWithDeliveries(hasDelivery bool, params *pagination.PaginationParams) (*pagination.PaginatedResult, error)
+	GetSalesOrdersWithInvoices(hasInvoice bool, params *pagination.PaginationParams) (*pagination.PaginatedResult, error)
+
+	// Acesso ao DB para operações diretas
+	GetDB() *gorm.DB
 }
 
-// gormSalesOrderRepository é a implementação concreta usando GORM
 type gormSalesOrderRepository struct {
 	db  *gorm.DB
 	log *zap.Logger
@@ -548,4 +559,226 @@ func (r *gormSalesOrderRepository) GetSalesOrdersByQuotation(quotationID int) (*
 	)
 
 	return &order, nil
+}
+
+// SearchSalesOrders busca pedidos de venda que correspondam a uma query de texto
+func (r *gormSalesOrderRepository) SearchSalesOrders(query string, params *pagination.PaginationParams) (*pagination.PaginatedResult, error) {
+	r.log.Info("Buscando pedidos de venda por texto",
+		zap.String("query", query),
+		zap.Int("page", params.Page),
+		zap.Int("page_size", params.PageSize),
+		zap.String("operation", "SearchSalesOrders"),
+	)
+
+	// Validar parâmetros de paginação
+	if params == nil || !params.Validate() {
+		return nil, errors.ErrInvalidPagination
+	}
+
+	// Preparar a query de busca usando ILIKE para case-insensitive
+	searchQuery := "%" + query + "%"
+
+	var totalItems int64
+	queryDB := r.db.Model(&models.SalesOrder{}).
+		Joins("LEFT JOIN contacts ON sales_orders.contact_id = contacts.id").
+		Joins("LEFT JOIN so_items ON so_items.sales_order_id = sales_orders.id").
+		Where("sales_orders.so_no ILIKE ? OR sales_orders.notes ILIKE ? OR "+
+			"sales_orders.payment_terms ILIKE ? OR sales_orders.shipping_address ILIKE ? OR "+
+			"contacts.name ILIKE ? OR contacts.email ILIKE ? OR "+
+			"so_items.product_name ILIKE ? OR so_items.product_code ILIKE ? OR so_items.description ILIKE ?",
+			searchQuery, searchQuery, searchQuery, searchQuery, searchQuery,
+			searchQuery, searchQuery, searchQuery, searchQuery).
+		Group("sales_orders.id")
+
+	if err := queryDB.Count(&totalItems).Error; err != nil {
+		r.log.Error("Erro ao contar pedidos na busca por texto", zap.Error(err))
+		return nil, fmt.Errorf("erro ao contar pedidos: %w", err)
+	}
+
+	offset := pagination.CalculateOffset(params.Page, params.PageSize)
+
+	var orders []models.SalesOrder
+	if err := queryDB.
+		Offset(offset).
+		Limit(params.PageSize).
+		Order("sales_orders.created_at DESC").
+		Find(&orders).Error; err != nil {
+		r.log.Error("Erro ao buscar pedidos por texto", zap.Error(err))
+		return nil, fmt.Errorf("erro ao buscar pedidos: %w", err)
+	}
+
+	// Carregar os relacionamentos para cada pedido
+	for i := range orders {
+		if err := r.db.Model(&orders[i]).Association("Items").Find(&orders[i].Items); err != nil {
+			r.log.Error("Erro ao carregar itens dos pedidos", zap.Error(err))
+			return nil, fmt.Errorf("erro ao carregar itens: %w", err)
+		}
+
+		if err := r.db.Model(&orders[i]).Association("Contact").Find(&orders[i].Contact); err != nil {
+			r.log.Error("Erro ao carregar contatos dos pedidos", zap.Error(err))
+			return nil, fmt.Errorf("erro ao carregar contatos: %w", err)
+		}
+
+		if orders[i].QuotationID > 0 {
+			if err := r.db.Model(&orders[i]).Association("Quotation").Find(&orders[i].Quotation); err != nil {
+				r.log.Error("Erro ao carregar cotações dos pedidos", zap.Error(err))
+				return nil, fmt.Errorf("erro ao carregar cotações: %w", err)
+			}
+		}
+	}
+
+	result := pagination.NewPaginatedResult(totalItems, params.Page, params.PageSize, orders)
+
+	r.log.Info("Pedidos encontrados na busca por texto",
+		zap.String("query", query),
+		zap.Int64("total_items", totalItems))
+	return result, nil
+}
+
+// GetSalesOrdersWithDeliveries busca pedidos de venda que têm ou não têm entregas associadas
+func (r *gormSalesOrderRepository) GetSalesOrdersWithDeliveries(hasDelivery bool, params *pagination.PaginationParams) (*pagination.PaginatedResult, error) {
+	r.log.Info("Buscando pedidos de venda com/sem entregas",
+		zap.Bool("has_delivery", hasDelivery),
+		zap.Int("page", params.Page),
+		zap.Int("page_size", params.PageSize),
+		zap.String("operation", "GetSalesOrdersWithDeliveries"))
+
+	// Validar parâmetros de paginação
+	if params == nil || !params.Validate() {
+		return nil, errors.ErrInvalidPagination
+	}
+
+	var totalItems int64
+	var queryDB *gorm.DB
+
+	if hasDelivery {
+		// Pedidos que têm entregas
+		queryDB = r.db.Model(&models.SalesOrder{}).
+			Joins("INNER JOIN deliveries ON deliveries.sales_order_id = sales_orders.id").
+			Group("sales_orders.id")
+	} else {
+		// Pedidos que não têm entregas
+		queryDB = r.db.Model(&models.SalesOrder{}).
+			Joins("LEFT JOIN deliveries ON deliveries.sales_order_id = sales_orders.id").
+			Where("deliveries.id IS NULL").
+			Group("sales_orders.id")
+	}
+
+	if err := queryDB.Count(&totalItems).Error; err != nil {
+		r.log.Error("Erro ao contar pedidos com/sem entregas", zap.Error(err))
+		return nil, fmt.Errorf("erro ao contar pedidos: %w", err)
+	}
+
+	offset := pagination.CalculateOffset(params.Page, params.PageSize)
+
+	var orders []models.SalesOrder
+	if err := queryDB.
+		Offset(offset).
+		Limit(params.PageSize).
+		Order("sales_orders.created_at DESC").
+		Find(&orders).Error; err != nil {
+		r.log.Error("Erro ao buscar pedidos com/sem entregas", zap.Error(err))
+		return nil, fmt.Errorf("erro ao buscar pedidos: %w", err)
+	}
+
+	// Carregar os relacionamentos para cada pedido
+	for i := range orders {
+		if err := r.db.Model(&orders[i]).Association("Items").Find(&orders[i].Items); err != nil {
+			r.log.Error("Erro ao carregar itens dos pedidos", zap.Error(err))
+			return nil, fmt.Errorf("erro ao carregar itens: %w", err)
+		}
+
+		if err := r.db.Model(&orders[i]).Association("Contact").Find(&orders[i].Contact); err != nil {
+			r.log.Error("Erro ao carregar contatos dos pedidos", zap.Error(err))
+			return nil, fmt.Errorf("erro ao carregar contatos: %w", err)
+		}
+
+		if orders[i].QuotationID > 0 {
+			if err := r.db.Model(&orders[i]).Association("Quotation").Find(&orders[i].Quotation); err != nil {
+				r.log.Error("Erro ao carregar cotações dos pedidos", zap.Error(err))
+				return nil, fmt.Errorf("erro ao carregar cotações: %w", err)
+			}
+		}
+	}
+
+	result := pagination.NewPaginatedResult(totalItems, params.Page, params.PageSize, orders)
+
+	r.log.Info("Pedidos com/sem entregas recuperados com sucesso",
+		zap.Bool("has_delivery", hasDelivery),
+		zap.Int64("total_items", totalItems))
+	return result, nil
+}
+
+// GetSalesOrdersWithInvoices busca pedidos de venda que têm ou não têm faturas associadas
+func (r *gormSalesOrderRepository) GetSalesOrdersWithInvoices(hasInvoice bool, params *pagination.PaginationParams) (*pagination.PaginatedResult, error) {
+	r.log.Info("Buscando pedidos de venda com/sem faturas",
+		zap.Bool("has_invoice", hasInvoice),
+		zap.Int("page", params.Page),
+		zap.Int("page_size", params.PageSize),
+		zap.String("operation", "GetSalesOrdersWithInvoices"))
+
+	// Validar parâmetros de paginação
+	if params == nil || !params.Validate() {
+		return nil, errors.ErrInvalidPagination
+	}
+
+	var totalItems int64
+	var queryDB *gorm.DB
+
+	if hasInvoice {
+		// Pedidos que têm faturas
+		queryDB = r.db.Model(&models.SalesOrder{}).
+			Joins("INNER JOIN invoices ON invoices.sales_order_id = sales_orders.id").
+			Group("sales_orders.id")
+	} else {
+		// Pedidos que não têm faturas
+		queryDB = r.db.Model(&models.SalesOrder{}).
+			Joins("LEFT JOIN invoices ON invoices.sales_order_id = sales_orders.id").
+			Where("invoices.id IS NULL").
+			Group("sales_orders.id")
+	}
+
+	if err := queryDB.Count(&totalItems).Error; err != nil {
+		r.log.Error("Erro ao contar pedidos com/sem faturas", zap.Error(err))
+		return nil, fmt.Errorf("erro ao contar pedidos: %w", err)
+	}
+
+	offset := pagination.CalculateOffset(params.Page, params.PageSize)
+
+	var orders []models.SalesOrder
+	if err := queryDB.
+		Offset(offset).
+		Limit(params.PageSize).
+		Order("sales_orders.created_at DESC").
+		Find(&orders).Error; err != nil {
+		r.log.Error("Erro ao buscar pedidos com/sem faturas", zap.Error(err))
+		return nil, fmt.Errorf("erro ao buscar pedidos: %w", err)
+	}
+
+	// Carregar os relacionamentos para cada pedido
+	for i := range orders {
+		if err := r.db.Model(&orders[i]).Association("Items").Find(&orders[i].Items); err != nil {
+			r.log.Error("Erro ao carregar itens dos pedidos", zap.Error(err))
+			return nil, fmt.Errorf("erro ao carregar itens: %w", err)
+		}
+
+		if err := r.db.Model(&orders[i]).Association("Contact").Find(&orders[i].Contact); err != nil {
+			r.log.Error("Erro ao carregar contatos dos pedidos", zap.Error(err))
+			return nil, fmt.Errorf("erro ao carregar contatos: %w", err)
+		}
+
+		if orders[i].QuotationID > 0 {
+			if err := r.db.Model(&orders[i]).Association("Quotation").Find(&orders[i].Quotation); err != nil {
+				r.log.Error("Erro ao carregar cotações dos pedidos", zap.Error(err))
+				return nil, fmt.Errorf("erro ao carregar cotações: %w", err)
+			}
+		}
+	}
+
+	result := pagination.NewPaginatedResult(totalItems, params.Page, params.PageSize, orders)
+
+	r.log.Info("Pedidos com/sem faturas recuperados com sucesso",
+		zap.Bool("has_invoice", hasInvoice),
+		zap.Int64("total_items", totalItems))
+	return result, nil
 }
