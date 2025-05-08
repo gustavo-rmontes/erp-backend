@@ -15,6 +15,10 @@ require (
 	golang.org/x/crypto v0.38.0
 )
 
+require (
+	github.com/golang/mock v1.6.0 // direct
+)
+
 require github.com/DATA-DOG/go-sqlmock v1.5.2 // direct
 
 require github.com/gin-contrib/cors v1.7.5 // direct
