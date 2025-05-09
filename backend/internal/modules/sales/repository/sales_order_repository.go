@@ -78,6 +78,14 @@ func NewSalesOrderRepository() (SalesOrderRepository, error) {
 	return salesOrderRepoInstance, nil
 }
 
+// NewTestSalesOrderRepository creates a repository instance for testing
+func NewTestSalesOrderRepository(db *gorm.DB) SalesOrderRepository {
+	return &gormSalesOrderRepository{
+		db:  db,
+		log: logger.WithModule("TestSalesOrderRepository"),
+	}
+}
+
 // CreateSalesOrder cria um novo pedido de venda no banco de dados
 func (r *gormSalesOrderRepository) CreateSalesOrder(order *models.SalesOrder) error {
 	r.log.Info("Iniciando criação de pedido de venda",

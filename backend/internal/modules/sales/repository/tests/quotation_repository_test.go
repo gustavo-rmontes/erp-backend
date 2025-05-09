@@ -3,9 +3,10 @@ package repository
 import (
 	db_config "ERP-ONSMART/backend/internal/db"
 	"ERP-ONSMART/backend/internal/errors"
-	"ERP-ONSMART/backend/internal/logger"
 	contact "ERP-ONSMART/backend/internal/modules/contact/models"
 	"ERP-ONSMART/backend/internal/modules/sales/models"
+	repository "ERP-ONSMART/backend/internal/modules/sales/repository"
+
 	"ERP-ONSMART/backend/internal/utils/pagination"
 
 	"fmt"
@@ -18,11 +19,8 @@ import (
 )
 
 // createMockQuotationRepo creates a repository with mocked DB
-func createMockQuotationRepo(db *gorm.DB) QuotationRepository {
-	return &gormQuotationRepository{
-		db:  db,
-		log: logger.WithModule("QuotationRepository"),
-	}
+func createMockQuotationRepo(db *gorm.DB) repository.QuotationRepository {
+	return repository.NewTestQuotationRepository(db)
 }
 
 // createTestQuotation creates a test quotation with given ID

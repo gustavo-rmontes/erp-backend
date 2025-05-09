@@ -3,8 +3,8 @@ package repository
 import (
 	db_config "ERP-ONSMART/backend/internal/db"
 	"ERP-ONSMART/backend/internal/errors"
-	"ERP-ONSMART/backend/internal/logger"
 	"ERP-ONSMART/backend/internal/modules/sales/models"
+	repository "ERP-ONSMART/backend/internal/modules/sales/repository"
 	"ERP-ONSMART/backend/internal/utils/pagination"
 
 	"math"
@@ -16,11 +16,8 @@ import (
 )
 
 // createMockPaymentRepo creates a repository with mocked DB
-func createMockPaymentRepo(db *gorm.DB) PaymentRepository {
-	return &gormPaymentRepository{
-		db:  db,
-		log: logger.WithModule("PaymentRepository"),
-	}
+func createMockPaymentRepo(db *gorm.DB) repository.PaymentRepository {
+	return repository.NewTestPaymentRepository(db)
 }
 
 // createTestPayment creates a test payment with given ID

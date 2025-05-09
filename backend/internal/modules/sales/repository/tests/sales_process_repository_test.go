@@ -3,9 +3,10 @@ package repository
 import (
 	db_config "ERP-ONSMART/backend/internal/db"
 	"ERP-ONSMART/backend/internal/errors"
-	"ERP-ONSMART/backend/internal/logger"
 	contact "ERP-ONSMART/backend/internal/modules/contact/models"
 	"ERP-ONSMART/backend/internal/modules/sales/models"
+	repository "ERP-ONSMART/backend/internal/modules/sales/repository"
+
 	"ERP-ONSMART/backend/internal/utils/pagination"
 
 	"math"
@@ -17,11 +18,8 @@ import (
 )
 
 // createMockSalesProcessRepo creates a repository with mocked DB
-func createMockSalesProcessRepo(db *gorm.DB) SalesProcessRepository {
-	return &gormSalesProcessRepository{
-		db:  db,
-		log: logger.WithModule("SalesProcessRepository"),
-	}
+func createMockSalesProcessRepo(db *gorm.DB) repository.SalesProcessRepository {
+	return repository.NewTestSalesProcessRepository(db)
 }
 
 // createTestSalesProcess creates a test sales process with given ID

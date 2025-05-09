@@ -69,6 +69,14 @@ func NewInvoiceRepository() (InvoiceRepository, error) {
 	return invoiceRepoInstance, nil
 }
 
+// NewTestInvoiceRepository creates a repository instance for testing
+func NewTestInvoiceRepository(db *gorm.DB) InvoiceRepository {
+	return &gormInvoiceRepository{
+		db:  db,
+		log: logger.WithModule("TestInvoiceRepository"),
+	}
+}
+
 // CreateInvoice cria uma nova fatura no banco de dados
 func (r *gormInvoiceRepository) CreateInvoice(invoice *models.Invoice) error {
 	r.log.Info("Iniciando criação de fatura",

@@ -3,9 +3,9 @@ package repository
 import (
 	db_config "ERP-ONSMART/backend/internal/db"
 	"ERP-ONSMART/backend/internal/errors"
-	"ERP-ONSMART/backend/internal/logger"
 	contact "ERP-ONSMART/backend/internal/modules/contact/models"
 	"ERP-ONSMART/backend/internal/modules/sales/models"
+	repository "ERP-ONSMART/backend/internal/modules/sales/repository"
 	"ERP-ONSMART/backend/internal/utils/pagination"
 
 	"fmt"
@@ -17,11 +17,8 @@ import (
 )
 
 // createMockInvoiceRepo creates a repository with mocked DB
-func createMockInvoiceRepo(db *gorm.DB) InvoiceRepository {
-	return &gormInvoiceRepository{
-		db:  db,
-		log: logger.WithModule("InvoiceRepository"),
-	}
+func createMockInvoiceRepo(db *gorm.DB) repository.InvoiceRepository {
+	return repository.NewTestInvoiceRepository(db)
 }
 
 // createTestInvoice creates a test invoice with given ID

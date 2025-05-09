@@ -68,13 +68,13 @@ func NewQuotationRepository() (QuotationRepository, error) {
 	return quotationRepoInstance, nil
 }
 
-// NewQuotationRepositoryWithDB creates a repository with a provided DB connection (for testing)
-// func NewQuotationRepositoryWithDB(db *gorm.DB, log *zap.Logger) QuotationRepository {
-// 	return &gormQuotationRepository{
-// 		db:  db,
-// 		log: log,
-// 	}
-// }
+// NewTestQuotationRepository creates a repository instance for testing
+func NewTestQuotationRepository(db *gorm.DB) QuotationRepository {
+	return &gormQuotationRepository{
+		db:  db,
+		log: logger.WithModule("TestQuotationRepository"),
+	}
+}
 
 // CreateQuotation cria uma nova cotação no banco de dados
 func (r *gormQuotationRepository) CreateQuotation(quotation *models.Quotation) error {

@@ -66,13 +66,13 @@ func NewPurchaseOrderRepository() (PurchaseOrderRepository, error) {
 	return purchaseOrderRepoInstance, nil
 }
 
-// NewPurchaseOrderRepositoryWithDB creates a repository with a provided DB connection (for testing)
-// func NewPurchaseOrderRepositoryWithDB(db *gorm.DB, log *zap.Logger) PurchaseOrderRepository {
-// 	return &gormPurchaseOrderRepository{
-// 		db:  db,
-// 		log: log,
-// 	}
-// }
+// NewTestPurchaseOrderRepository creates a repository instance for testing
+func NewTestPurchaseOrderRepository(db *gorm.DB) PurchaseOrderRepository {
+	return &gormPurchaseOrderRepository{
+		db:  db,
+		log: logger.WithModule("TestPurchaseOrderRepository"),
+	}
+}
 
 // CreatePurchaseOrder cria um novo pedido de compra no banco de dados
 func (r *gormPurchaseOrderRepository) CreatePurchaseOrder(order *models.PurchaseOrder) error {

@@ -68,6 +68,14 @@ func NewDeliveryRepository() (DeliveryRepository, error) {
 	return deliveryRepoInstance, nil
 }
 
+// NewTestDeliveryRepository creates a repository instance for testing
+func NewTestDeliveryRepository(db *gorm.DB) DeliveryRepository {
+	return &gormDeliveryRepository{
+		db:  db,
+		log: logger.WithModule("TestDeliveryRepository"),
+	}
+}
+
 // CreateDelivery cria uma nova entrega no banco de dados
 func (r *gormDeliveryRepository) CreateDelivery(delivery *models.Delivery) error {
 	r.log.Info("Iniciando criação de entrega",

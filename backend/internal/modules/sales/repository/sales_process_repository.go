@@ -73,6 +73,14 @@ func NewSalesProcessRepository() (SalesProcessRepository, error) {
 	return salesProcessRepoInstance, nil
 }
 
+// NewTestSalesProcessRepository creates a repository instance for testing
+func NewTestSalesProcessRepository(db *gorm.DB) SalesProcessRepository {
+	return &gormSalesProcessRepository{
+		db:  db,
+		log: logger.WithModule("TestSalesProcessRepository"),
+	}
+}
+
 // CreateSalesProcess cria um novo processo de vendas no banco de dados
 func (r *gormSalesProcessRepository) CreateSalesProcess(process *models.SalesProcess) error {
 	r.log.Info("Iniciando criação de processo de vendas",

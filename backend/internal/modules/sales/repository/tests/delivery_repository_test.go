@@ -3,8 +3,8 @@ package repository
 import (
 	db_config "ERP-ONSMART/backend/internal/db"
 	"ERP-ONSMART/backend/internal/errors"
-	"ERP-ONSMART/backend/internal/logger"
 	"ERP-ONSMART/backend/internal/modules/sales/models"
+	repository "ERP-ONSMART/backend/internal/modules/sales/repository"
 	"ERP-ONSMART/backend/internal/utils/pagination"
 
 	"fmt"
@@ -17,11 +17,8 @@ import (
 )
 
 // createMockDeliveryRepo creates a repository with mocked DB
-func createMockDeliveryRepo(db *gorm.DB) DeliveryRepository {
-	return &gormDeliveryRepository{
-		db:  db,
-		log: logger.WithModule("DeliveryRepository"),
-	}
+func createMockDeliveryRepo(db *gorm.DB) repository.DeliveryRepository {
+	return repository.NewTestDeliveryRepository(db)
 }
 
 // createTestDelivery creates a test delivery with given ID

@@ -3,9 +3,10 @@ package repository
 import (
 	db_config "ERP-ONSMART/backend/internal/db"
 	"ERP-ONSMART/backend/internal/errors"
-	"ERP-ONSMART/backend/internal/logger"
 	contact "ERP-ONSMART/backend/internal/modules/contact/models"
 	"ERP-ONSMART/backend/internal/modules/sales/models"
+	repository "ERP-ONSMART/backend/internal/modules/sales/repository"
+
 	"ERP-ONSMART/backend/internal/utils/pagination"
 
 	"fmt"
@@ -18,11 +19,8 @@ import (
 )
 
 // createMockPurchaseOrderRepo creates a repository with mocked DB
-func createMockPurchaseOrderRepo(db *gorm.DB) PurchaseOrderRepository {
-	return &gormPurchaseOrderRepository{
-		db:  db,
-		log: logger.WithModule("PurchaseOrderRepository"),
-	}
+func createMockPurchaseOrderRepo(db *gorm.DB) repository.PurchaseOrderRepository {
+	return repository.NewTestPurchaseOrderRepository(db)
 }
 
 // createTestPurchaseOrder creates a test purchase order with given ID

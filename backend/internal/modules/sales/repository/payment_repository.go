@@ -67,6 +67,14 @@ func NewPaymentRepository() (PaymentRepository, error) {
 	return paymentRepoInstance, nil
 }
 
+// NewTestPaymentRepository creates a repository instance for testing
+func NewTestPaymentRepository(db *gorm.DB) PaymentRepository {
+	return &gormPaymentRepository{
+		db:  db,
+		log: logger.WithModule("TestPaymentRepository"),
+	}
+}
+
 // CreatePayment cria um novo pagamento no banco de dados
 func (r *gormPaymentRepository) CreatePayment(payment *models.Payment) error {
 	r.log.Info("Iniciando criação de pagamento",
