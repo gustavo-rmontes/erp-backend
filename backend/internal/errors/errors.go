@@ -21,6 +21,7 @@ var (
 	ErrInvoiceNotFound       = errors.New("fatura não encontrada")
 	ErrPaymentNotFound       = errors.New("pagamento não encontrado")
 	ErrSalesProcessNotFound  = errors.New("processo de vendas não encontrado")
+	ErrDeliveryItemNotFound  = errors.New("delivery item not found")
 
 	// Erros de lógica de negócio
 	ErrRelatedRecordsExist = errors.New("não é possível excluir devido a registros relacionados")
