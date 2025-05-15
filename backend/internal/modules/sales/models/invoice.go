@@ -18,10 +18,10 @@ type Invoice struct {
 	UpdatedAt     time.Time `json:"updated_at" gorm:"autoUpdateTime"`
 	IssueDate     time.Time `json:"issue_date"`
 	DueDate       time.Time `json:"due_date" validate:"required"`
-	SubTotal      float64   `json:"subtotal"`
-	TaxTotal      float64   `json:"tax_total"`
-	DiscountTotal float64   `json:"discount_total"`
-	GrandTotal    float64   `json:"grand_total"`
+	SubTotal      float64   `json:"subtotal" gorm:"column:subtotal"`
+	TaxTotal      float64   `json:"tax_total" gorm:"column:tax_total"`
+	DiscountTotal float64   `json:"discount_total" gorm:"column:discount_total"`
+	GrandTotal    float64   `json:"grand_total" gorm:"column:grand_total"`
 	AmountPaid    float64   `json:"amount_paid" gorm:"default:0"`
 	PaymentTerms  string    `json:"payment_terms"`
 	Notes         string    `json:"notes"`
