@@ -32,6 +32,11 @@ func GetLogger() *zap.Logger {
 	return Logger
 }
 
+// SetLogger permite definir um logger personalizado (útil para testes)
+func SetLogger(l *zap.Logger) {
+	Logger = l
+}
+
 // WithModule retorna um logger com o campo "module" preenchido
 func WithModule(moduleName string) *zap.Logger {
 	return GetLogger().With(zap.String("module", moduleName))
