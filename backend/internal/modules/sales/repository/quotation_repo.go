@@ -33,6 +33,7 @@ type QuotationRepository interface {
 	GetQuotationsByContactType(contactType string, params *pagination.PaginationParams) (*pagination.PaginatedResult, error)
 	ConvertToSalesOrder(quotationID int) error
 	GetExpiringQuotations(days int, params *pagination.PaginationParams) (*pagination.PaginatedResult, error)
+	SetCreatedAtForTesting(quotationID int, createdAt time.Time) error
 }
 
 // QuotationFilter define os filtros para busca avançada
@@ -494,7 +495,8 @@ func (r *quotationRepository) GetQuotationStats(filter QuotationFilter) (*Quotat
 		TotalValue float64
 	}
 
-	if err := query.Select("COUNT(*) as count, SUM(grand_total) as total_value").
+	// Usando COALESCE para tratar NULL na soma total
+	if err := query.Select("COUNT(*) as count, COALESCE(SUM(grand_total), 0) as total_value").
 		Scan(&result).Error; err != nil {
 		return nil, errors.WrapError(err, "falha ao calcular estatísticas")
 	}
@@ -512,7 +514,17 @@ func (r *quotationRepository) GetQuotationStats(filter QuotationFilter) (*Quotat
 
 	for key, status := range statusQueries {
 		var value float64
-		statusQuery := query
+		statusQuery := r.db.Model(&models.Quotation{})
+
+		// Aplicar os mesmos filtros básicos
+		if filter.ContactID > 0 {
+			statusQuery = statusQuery.Where("contact_id = ?", filter.ContactID)
+		}
+
+		if !filter.DateRangeStart.IsZero() && !filter.DateRangeEnd.IsZero() {
+			statusQuery = statusQuery.Where("created_at >= ? AND created_at <= ?", filter.DateRangeStart, filter.DateRangeEnd)
+		}
+
 		if key == "expired" {
 			now := time.Now()
 			statusQuery = statusQuery.Where("expiry_date < ? AND status NOT IN ?", now, []string{models.QuotationStatusAccepted, models.QuotationStatusRejected, models.QuotationStatusCancelled})
@@ -522,8 +534,10 @@ func (r *quotationRepository) GetQuotationStats(filter QuotationFilter) (*Quotat
 			statusQuery = statusQuery.Where("status = ?", status)
 		}
 
-		if err := statusQuery.Select("SUM(grand_total)").Scan(&value).Error; err != nil {
+		// Usando COALESCE para tratar NULL nas somas por status
+		if err := statusQuery.Select("COALESCE(SUM(grand_total), 0) as total").Scan(&value).Error; err != nil {
 			r.logger.Warn("erro ao calcular valor para status", zap.String("status", status), zap.Error(err))
+			continue
 		}
 
 		switch key {
@@ -719,10 +733,71 @@ func (r *quotationRepository) ConvertToSalesOrder(quotationID int) error {
 		return errors.WrapError(stderrors.New("quotation não está aceita"), "status inválido para conversão")
 	}
 
-	// TODO: Implementar a conversão para Sales Order
-	// Isso seria feito em conjunto com o SalesOrderRepository
-	// Por enquanto, apenas registramos a operação
-	r.logger.Info("quotation pronta para conversão em pedido de venda", zap.Int("quotation_id", quotationID))
+	// Inicia transação
+	tx := r.db.Begin()
+
+	// Gera número do pedido de venda
+	soNumber := r.generateSalesOrderNumber(tx)
+
+	// Cria o Sales Order
+	salesOrder := &models.SalesOrder{
+		SONo:            soNumber,
+		QuotationID:     quotation.ID,
+		ContactID:       quotation.ContactID,
+		Status:          models.SOStatusConfirmed,     // Já começa como confirmado, já que a cotação já foi aceita
+		ExpectedDate:    time.Now().AddDate(0, 0, 15), // Data estimada de 15 dias por padrão
+		SubTotal:        quotation.SubTotal,
+		TaxTotal:        quotation.TaxTotal,
+		DiscountTotal:   quotation.DiscountTotal,
+		GrandTotal:      quotation.GrandTotal,
+		Notes:           quotation.Notes,
+		PaymentTerms:    quotation.Terms,
+		ShippingAddress: "", // Precisaria ser preenchido com informações do contato
+	}
+
+	// Cria o sales order
+	if err := tx.Create(salesOrder).Error; err != nil {
+		tx.Rollback()
+		r.logger.Error("erro ao criar sales order", zap.Error(err))
+		return errors.WrapError(err, "falha ao criar sales order")
+	}
+
+	// Copia os itens da cotação para o pedido de venda
+	for _, item := range quotation.Items {
+		orderItem := &models.SOItem{
+			SalesOrderID: salesOrder.ID,
+			ProductID:    item.ProductID,
+			ProductName:  item.ProductName,
+			ProductCode:  item.ProductCode,
+			Description:  item.Description,
+			Quantity:     item.Quantity,
+			UnitPrice:    item.UnitPrice,
+			Discount:     item.Discount,
+			Tax:          item.Tax,
+			Total:        item.Total,
+		}
+
+		if err := tx.Create(orderItem).Error; err != nil {
+			tx.Rollback()
+			r.logger.Error("erro ao criar item do sales order", zap.Error(err))
+			return errors.WrapError(err, fmt.Sprintf("falha ao criar item do sales order para o produto %s", item.ProductName))
+		}
+	}
+
+	// Opcionalmente, podemos atualizar o status da cotação para indicar que foi convertida
+	// Poderia ser criado um status específico como "converted" no enums.go
+	// Por enquanto, mantém o status atual
+
+	// Commit da transação
+	if err := tx.Commit().Error; err != nil {
+		r.logger.Error("erro ao confirmar transação", zap.Error(err))
+		return errors.WrapError(err, "falha ao confirmar transação")
+	}
+
+	r.logger.Info("quotation convertida em pedido de venda com sucesso",
+		zap.Int("quotation_id", quotationID),
+		zap.Int("sales_order_id", salesOrder.ID),
+		zap.String("sales_order_no", salesOrder.SONo))
 
 	return nil
 }
@@ -771,4 +846,29 @@ func (r *quotationRepository) generateQuotationNumber() string {
 	sequence := lastQuotation.ID + 1
 
 	return fmt.Sprintf("QT-%d-%06d", year, sequence)
+}
+
+func (r *quotationRepository) generateSalesOrderNumber(tx *gorm.DB) string {
+	var lastOrder models.SalesOrder
+
+	// Se tx for nil, usa r.db
+	db := r.db
+	if tx != nil {
+		db = tx
+	}
+
+	db.Order("id DESC").First(&lastOrder)
+
+	year := time.Now().Year()
+	sequence := lastOrder.ID + 1
+	if sequence == 0 {
+		sequence = 1 // Evita problemas com o primeiro registro
+	}
+
+	return fmt.Sprintf("SO-%d-%06d", year, sequence)
+}
+
+// Apenas para uso em testes
+func (r *quotationRepository) SetCreatedAtForTesting(quotationID int, createdAt time.Time) error {
+	return r.db.Exec("UPDATE quotations SET created_at = ? WHERE id = ?", createdAt, quotationID).Error
 }
