@@ -40,7 +40,7 @@ func createTestQuotation(t *testing.T) *models.Quotation {
 	return quotation
 }
 
-func TestQuotationRepository_GetAllQuotations(t *testing.T) {
+func Test_GetAllQuotations(t *testing.T) {
 	// Inicializa o repositório
 	repo, err := repository.NewQuotationRepository()
 	assert.NoError(t, err)
@@ -64,7 +64,7 @@ func TestQuotationRepository_GetAllQuotations(t *testing.T) {
 	assert.NotEmpty(t, quotations)
 }
 
-func TestQuotationRepository_GetQuotationsByStatus(t *testing.T) {
+func Test_GetQuotationsByStatus(t *testing.T) {
 	// Inicializa o repositório
 	repo, err := repository.NewQuotationRepository()
 	assert.NoError(t, err)
@@ -99,7 +99,7 @@ func TestQuotationRepository_GetQuotationsByStatus(t *testing.T) {
 	assert.True(t, found, "A cotação com status enviado deveria estar nos resultados")
 }
 
-func TestQuotationRepository_ExpiredAndExpiringQuotations(t *testing.T) {
+func Test_ExpiredAndExpiringQuotations(t *testing.T) {
 	// Inicializa o repositório
 	repo, err := repository.NewQuotationRepository()
 	assert.NoError(t, err)
@@ -150,7 +150,7 @@ func TestQuotationRepository_ExpiredAndExpiringQuotations(t *testing.T) {
 	repo.DeleteQuotation(expiredQuotation.ID)
 }
 
-func TestQuotationRepository_SearchQuotations(t *testing.T) {
+func Test_SearchQuotations(t *testing.T) {
 	// Inicializa o repositório
 	repo, err := repository.NewQuotationRepository()
 	assert.NoError(t, err)
@@ -194,7 +194,7 @@ func TestQuotationRepository_SearchQuotations(t *testing.T) {
 	repo.DeleteQuotation(searchQuotation.ID)
 }
 
-func TestQuotationRepository_NotFound(t *testing.T) {
+func Test_QuotationRepository_NotFound(t *testing.T) {
 	// Inicializa o repositório
 	repo, err := repository.NewQuotationRepository()
 	assert.NoError(t, err)
@@ -212,7 +212,7 @@ func TestQuotationRepository_NotFound(t *testing.T) {
 	assert.Error(t, err)
 }
 
-func TestQuotationRepository_GetQuotationStats(t *testing.T) {
+func Test_GetQuotationStats(t *testing.T) {
 	// Inicializa o repositório
 	repo, err := repository.NewQuotationRepository()
 	assert.NoError(t, err)
@@ -277,7 +277,7 @@ func TestQuotationRepository_GetQuotationStats(t *testing.T) {
 		"Deveria haver pelo menos uma cotação rejeitada")
 }
 
-func TestQuotationRepository_GetQuotationsByContact(t *testing.T) {
+func Test_GetQuotationsByContact(t *testing.T) {
 	// Inicializa o repositório
 	repo, err := repository.NewQuotationRepository()
 	assert.NoError(t, err)
@@ -352,7 +352,7 @@ func TestQuotationRepository_GetQuotationsByContact(t *testing.T) {
 	}
 }
 
-func TestQuotationRepository_GetQuotationsByPeriod(t *testing.T) {
+func Test_GetQuotationsByPeriod(t *testing.T) {
 	// Inicializa o repositório
 	repo, err := repository.NewQuotationRepository()
 	assert.NoError(t, err)
@@ -437,7 +437,7 @@ func TestQuotationRepository_GetQuotationsByPeriod(t *testing.T) {
 	}
 }
 
-func TestQuotationRepository_GetQuotationsByExpiryDateRange(t *testing.T) {
+func Test_GetQuotationsByExpiryDateRange(t *testing.T) {
 	// Inicializa o repositório
 	repo, err := repository.NewQuotationRepository()
 	assert.NoError(t, err)
@@ -552,7 +552,7 @@ func TestQuotationRepository_GetQuotationsByExpiryDateRange(t *testing.T) {
 	}
 }
 
-func TestQuotationRepository_GetContactQuotationsSummary(t *testing.T) {
+func Test_GetContactQuotationsSummary(t *testing.T) {
 	// Inicializa o repositório
 	repo, err := repository.NewQuotationRepository()
 	assert.NoError(t, err)
@@ -660,7 +660,7 @@ func TestQuotationRepository_GetContactQuotationsSummary(t *testing.T) {
 		"A data da última cotação deve ser recente")
 }
 
-func TestQuotationRepository_GetQuotationsByContactType(t *testing.T) {
+func Test_GetQuotationsByContactType(t *testing.T) {
 	// Inicializa o repositório
 	repo, err := repository.NewQuotationRepository()
 	assert.NoError(t, err)
@@ -777,7 +777,7 @@ func TestQuotationRepository_GetQuotationsByContactType(t *testing.T) {
 	}
 }
 
-func TestQuotationRepository_ConvertToSalesOrder(t *testing.T) {
+func Test_ConvertToSalesOrder(t *testing.T) {
 	// Inicializa o repositório
 	repo, err := repository.NewQuotationRepository()
 	assert.NoError(t, err)
