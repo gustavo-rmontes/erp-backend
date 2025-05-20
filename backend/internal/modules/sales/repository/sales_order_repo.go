@@ -16,23 +16,22 @@ import (
 
 // SalesOrderRepository define as operações do repositório de sales orders
 type SalesOrderRepository interface {
+	// CRUD básico
 	CreateSalesOrder(salesOrder *models.SalesOrder) error
 	GetSalesOrderByID(id int) (*models.SalesOrder, error)
-	GetAllSalesOrders(params *pagination.PaginationParams) (*pagination.PaginatedResult, error)
 	UpdateSalesOrder(id int, salesOrder *models.SalesOrder) error
 	DeleteSalesOrder(id int) error
+
+	// Consultas com paginação
+	GetAllSalesOrders(params *pagination.PaginationParams) (*pagination.PaginatedResult, error)
 	GetSalesOrdersByStatus(status string, params *pagination.PaginationParams) (*pagination.PaginatedResult, error)
 	GetSalesOrdersByContact(contactID int, params *pagination.PaginationParams) (*pagination.PaginatedResult, error)
 	GetSalesOrdersByQuotation(quotationID int, params *pagination.PaginationParams) (*pagination.PaginatedResult, error)
 	GetSalesOrdersByPeriod(startDate, endDate time.Time, params *pagination.PaginationParams) (*pagination.PaginatedResult, error)
 	GetSalesOrdersByExpectedDate(startDate, endDate time.Time, params *pagination.PaginationParams) (*pagination.PaginatedResult, error)
+
+	// Busca avançada (opcional, considere mover para serviço se contiver muita lógica de negócio)
 	SearchSalesOrders(filter SalesOrderFilter, params *pagination.PaginationParams) (*pagination.PaginatedResult, error)
-	GetSalesOrderStats(filter SalesOrderFilter) (*SalesOrderStats, error)
-	GetContactSalesOrdersSummary(contactID int) (*ContactSalesOrdersSummary, error)
-	GetSalesOrdersByContactType(contactType string, params *pagination.PaginationParams) (*pagination.PaginatedResult, error)
-	CreateInvoiceFromSalesOrder(salesOrderID int) error
-	CreatePurchaseOrderFromSalesOrder(salesOrderID int) error
-	GetPendingSalesOrders(params *pagination.PaginationParams) (*pagination.PaginatedResult, error)
 }
 
 // SalesOrderFilter define os filtros para busca avançada
@@ -401,92 +400,16 @@ func (r *salesOrderRepository) SearchSalesOrders(filter SalesOrderFilter, params
 	var salesOrders []models.SalesOrder
 	var total int64
 
+	// Inicia a query base
 	query := r.db.Model(&models.SalesOrder{})
 
-	// Aplica os filtros
-	if len(filter.Status) > 0 {
-		query = query.Where("status IN ?", filter.Status)
-	}
-
-	if filter.ContactID > 0 {
-		query = query.Where("contact_id = ?", filter.ContactID)
-	}
-
-	// Filtro por tipo de contato ou pessoa
-	if filter.ContactType != "" || filter.PersonType != "" {
-		contactQuery := r.db.Model(&contact.Contact{})
-		if filter.ContactType != "" {
-			contactQuery = contactQuery.Where("type = ?", filter.ContactType)
-		}
-		if filter.PersonType != "" {
-			contactQuery = contactQuery.Where("person_type = ?", filter.PersonType)
-		}
-		var contactIDs []int
-		contactQuery.Pluck("id", &contactIDs)
-		if len(contactIDs) > 0 {
-			query = query.Where("contact_id IN ?", contactIDs)
-		}
-	}
-
-	// Filtros de data
-	if !filter.DateRangeStart.IsZero() && !filter.DateRangeEnd.IsZero() {
-		query = query.Where("created_at >= ? AND created_at <= ?", filter.DateRangeStart, filter.DateRangeEnd)
-	}
-
-	if !filter.ExpectedDateStart.IsZero() && !filter.ExpectedDateEnd.IsZero() {
-		query = query.Where("expected_date >= ? AND expected_date <= ?", filter.ExpectedDateStart, filter.ExpectedDateEnd)
-	}
-
-	// Filtros de valor
-	if filter.MinAmount > 0 {
-		query = query.Where("grand_total >= ?", filter.MinAmount)
-	}
-
-	if filter.MaxAmount > 0 {
-		query = query.Where("grand_total <= ?", filter.MaxAmount)
-	}
-
-	// Filtro de invoice
-	if filter.HasInvoice != nil {
-		if *filter.HasInvoice {
-			var soIDs []int
-			r.db.Model(&models.Invoice{}).Distinct("sales_order_id").Where("sales_order_id IS NOT NULL").Pluck("sales_order_id", &soIDs)
-			if len(soIDs) > 0 {
-				query = query.Where("id IN ?", soIDs)
-			}
-		} else {
-			var soIDs []int
-			r.db.Model(&models.Invoice{}).Distinct("sales_order_id").Where("sales_order_id IS NOT NULL").Pluck("sales_order_id", &soIDs)
-			if len(soIDs) > 0 {
-				query = query.Where("id NOT IN ?", soIDs)
-			}
-		}
-	}
-
-	// Filtro de purchase order
-	if filter.HasPurchaseOrder != nil {
-		if *filter.HasPurchaseOrder {
-			var soIDs []int
-			r.db.Model(&models.PurchaseOrder{}).Distinct("sales_order_id").Where("sales_order_id IS NOT NULL").Pluck("sales_order_id", &soIDs)
-			if len(soIDs) > 0 {
-				query = query.Where("id IN ?", soIDs)
-			}
-		} else {
-			var soIDs []int
-			r.db.Model(&models.PurchaseOrder{}).Distinct("sales_order_id").Where("sales_order_id IS NOT NULL").Pluck("sales_order_id", &soIDs)
-			if len(soIDs) > 0 {
-				query = query.Where("id NOT IN ?", soIDs)
-			}
-		}
-	}
-
-	// Busca textual
-	if filter.SearchQuery != "" {
-		searchPattern := "%" + filter.SearchQuery + "%"
-		query = query.Joins("LEFT JOIN contacts ON contacts.id = sales_orders.contact_id").
-			Where("sales_orders.so_no LIKE ? OR sales_orders.notes LIKE ? OR contacts.name LIKE ? OR contacts.company_name LIKE ?",
-				searchPattern, searchPattern, searchPattern, searchPattern)
-	}
+	// Aplica os diversos filtros usando métodos auxiliares
+	query = r.applyStatusFilter(query, filter)
+	query = r.applyContactFilter(query, filter)
+	query = r.applyDateRangeFilters(query, filter)
+	query = r.applyAmountFilters(query, filter)
+	query = r.applyRelatedEntityFilters(query, filter)
+	query = r.applyTextSearchFilter(query, filter)
 
 	// Conta o total
 	if err := query.Count(&total).Error; err != nil {
@@ -510,302 +433,137 @@ func (r *salesOrderRepository) SearchSalesOrders(filter SalesOrderFilter, params
 	return result, nil
 }
 
-// GetSalesOrderStats retorna estatísticas de sales orders
-func (r *salesOrderRepository) GetSalesOrderStats(filter SalesOrderFilter) (*SalesOrderStats, error) {
-	stats := &SalesOrderStats{
-		CountByStatus: make(map[string]int),
+// Método auxiliar para filtrar por status
+func (r *salesOrderRepository) applyStatusFilter(query *gorm.DB, filter SalesOrderFilter) *gorm.DB {
+	if len(filter.Status) > 0 {
+		return query.Where("status IN ?", filter.Status)
 	}
+	return query
+}
 
-	query := r.db.Model(&models.SalesOrder{})
-
-	// Aplica filtros básicos
+// Método auxiliar para filtrar por contacto e tipo de pessoa
+func (r *salesOrderRepository) applyContactFilter(query *gorm.DB, filter SalesOrderFilter) *gorm.DB {
+	// Filtro simples de ID do contato
 	if filter.ContactID > 0 {
 		query = query.Where("contact_id = ?", filter.ContactID)
 	}
 
+	// Filtro por tipo de contato ou pessoa
+	if filter.ContactType != "" || filter.PersonType != "" {
+		var contactIDs []int
+		contactQuery := r.db.Model(&contact.Contact{})
+
+		if filter.ContactType != "" {
+			contactQuery = contactQuery.Where("type = ?", filter.ContactType)
+		}
+		if filter.PersonType != "" {
+			contactQuery = contactQuery.Where("person_type = ?", filter.PersonType)
+		}
+
+		contactQuery.Pluck("id", &contactIDs)
+
+		if len(contactIDs) > 0 {
+			query = query.Where("contact_id IN ?", contactIDs)
+		}
+	}
+
+	return query
+}
+
+// Método auxiliar para filtrar por datas
+func (r *salesOrderRepository) applyDateRangeFilters(query *gorm.DB, filter SalesOrderFilter) *gorm.DB {
+	// Filtro de data de criação
 	if !filter.DateRangeStart.IsZero() && !filter.DateRangeEnd.IsZero() {
-		query = query.Where("created_at >= ? AND created_at <= ?", filter.DateRangeStart, filter.DateRangeEnd)
+		query = query.Where("created_at >= ? AND created_at <= ?",
+			filter.DateRangeStart, filter.DateRangeEnd)
 	}
 
-	// Contagem total e valores
-	var result struct {
-		Count      int
-		TotalValue float64
+	// Filtro de data esperada
+	if !filter.ExpectedDateStart.IsZero() && !filter.ExpectedDateEnd.IsZero() {
+		query = query.Where("expected_date >= ? AND expected_date <= ?",
+			filter.ExpectedDateStart, filter.ExpectedDateEnd)
 	}
 
-	if err := query.Select("COUNT(*) as count, SUM(grand_total) as total_value").
-		Scan(&result).Error; err != nil {
-		return nil, errors.WrapError(err, "falha ao calcular estatísticas")
-	}
-
-	stats.TotalOrders = result.Count
-	stats.TotalValue = result.TotalValue
-
-	// Valores por status específicos
-	statusQueries := map[string]string{
-		"confirmed":  models.SOStatusConfirmed,
-		"processing": models.SOStatusProcessing,
-		"completed":  models.SOStatusCompleted,
-		"cancelled":  models.SOStatusCancelled,
-	}
-
-	for key, status := range statusQueries {
-		var value float64
-		if err := query.Where("status = ?", status).
-			Select("SUM(grand_total)").
-			Scan(&value).Error; err != nil {
-			r.logger.Warn("erro ao calcular valor para status", zap.String("status", status), zap.Error(err))
-		}
-
-		switch key {
-		case "confirmed":
-			stats.TotalConfirmed = value
-		case "processing":
-			stats.TotalProcessing = value
-		case "completed":
-			stats.TotalCompleted = value
-		case "cancelled":
-			stats.TotalCancelled = value
-		}
-	}
-
-	// Contagem por status
-	rows, err := query.Select("status, COUNT(*) as count").
-		Group("status").
-		Rows()
-	if err != nil {
-		return nil, errors.WrapError(err, "falha ao contar por status")
-	}
-	defer rows.Close()
-
-	for rows.Next() {
-		var status string
-		var count int
-		if err := rows.Scan(&status, &count); err != nil {
-			continue
-		}
-		stats.CountByStatus[status] = count
-	}
-
-	// Calcula taxa de cumprimento
-	completedCount := stats.CountByStatus[models.SOStatusCompleted]
-	totalCount := stats.TotalOrders
-	if totalCount > 0 {
-		stats.FulfillmentRate = float64(completedCount) / float64(totalCount) * 100
-	}
-
-	return stats, nil
+	return query
 }
 
-// GetContactSalesOrdersSummary retorna um resumo dos sales orders de um contato
-func (r *salesOrderRepository) GetContactSalesOrdersSummary(contactID int) (*ContactSalesOrdersSummary, error) {
-	summary := &ContactSalesOrdersSummary{
-		ContactID: contactID,
+// Método auxiliar para filtrar por valores monetários
+func (r *salesOrderRepository) applyAmountFilters(query *gorm.DB, filter SalesOrderFilter) *gorm.DB {
+	if filter.MinAmount > 0 {
+		query = query.Where("grand_total >= ?", filter.MinAmount)
 	}
 
-	// Busca informações do contato
-	var contact contact.Contact
-	if err := r.db.First(&contact, contactID).Error; err != nil {
-		return nil, errors.WrapError(err, "falha ao buscar contato")
+	if filter.MaxAmount > 0 {
+		query = query.Where("grand_total <= ?", filter.MaxAmount)
 	}
 
-	summary.ContactName = contact.Name
-	if contact.CompanyName != "" {
-		summary.ContactName = contact.CompanyName
-	}
-	summary.ContactType = contact.Type
+	return query
+}
 
-	// Estatísticas dos sales orders
-	var stats struct {
-		Count      int
-		TotalValue float64
-	}
+// Método auxiliar genérico para aplicar filtros de entidades relacionadas
+func (r *salesOrderRepository) getRelatedOrderIDs(entityType string, hasRelation bool) ([]int, error) {
+	var tableName string
 
-	if err := r.db.Model(&models.SalesOrder{}).
-		Where("contact_id = ?", contactID).
-		Select("COUNT(*) as count, SUM(grand_total) as total_value").
-		Scan(&stats).Error; err != nil {
-		return nil, errors.WrapError(err, "falha ao calcular estatísticas do contato")
+	switch entityType {
+	case "invoice":
+		tableName = "invoices"
+	case "purchase_order":
+		tableName = "purchase_orders"
+	default:
+		return nil, fmt.Errorf("tipo de entidade não suportado: %s", entityType)
 	}
 
-	summary.TotalOrders = stats.Count
-	summary.TotalValue = stats.TotalValue
+	var orderIDs []int
+	query := r.db.Table(tableName).
+		Distinct("sales_order_id").
+		Where("sales_order_id IS NOT NULL")
 
-	// Valores por status
-	statusQueries := map[string]string{
-		"completed": models.SOStatusCompleted,
-		"cancelled": models.SOStatusCancelled,
+	if err := query.Pluck("sales_order_id", &orderIDs).Error; err != nil {
+		return nil, err
 	}
 
-	for key, status := range statusQueries {
-		var value float64
-		if err := r.db.Model(&models.SalesOrder{}).
-			Where("contact_id = ? AND status = ?", contactID, status).
-			Select("SUM(grand_total)").
-			Scan(&value).Error; err != nil {
-			r.logger.Warn("erro ao calcular valor para status", zap.String("status", status), zap.Error(err))
-		}
+	return orderIDs, nil
+}
 
-		switch key {
-		case "completed":
-			summary.TotalCompleted = value
-		case "cancelled":
-			summary.TotalCancelled = value
+// Método auxiliar para filtrar por relações com outras entidades
+func (r *salesOrderRepository) applyRelatedEntityFilters(query *gorm.DB, filter SalesOrderFilter) *gorm.DB {
+	// Filtro de invoice
+	if filter.HasInvoice != nil {
+		if orderIDs, err := r.getRelatedOrderIDs("invoice", true); err == nil && len(orderIDs) > 0 {
+			if *filter.HasInvoice {
+				query = query.Where("id IN ?", orderIDs)
+			} else {
+				query = query.Where("id NOT IN ?", orderIDs)
+			}
 		}
 	}
 
-	// Sales orders pendentes
-	var pendingStats struct {
-		Count int
-		Value float64
+	// Filtro de purchase order
+	if filter.HasPurchaseOrder != nil {
+		if orderIDs, err := r.getRelatedOrderIDs("purchase_order", true); err == nil && len(orderIDs) > 0 {
+			if *filter.HasPurchaseOrder {
+				query = query.Where("id IN ?", orderIDs)
+			} else {
+				query = query.Where("id NOT IN ?", orderIDs)
+			}
+		}
 	}
 
-	if err := r.db.Model(&models.SalesOrder{}).
-		Where("contact_id = ? AND status IN ?", contactID, []string{models.SOStatusDraft, models.SOStatusConfirmed, models.SOStatusProcessing}).
-		Select("COUNT(*) as count, SUM(grand_total) as value").
-		Scan(&pendingStats).Error; err != nil {
-		r.logger.Warn("erro ao calcular sales orders pendentes do contato", zap.Error(err))
-	}
-
-	summary.PendingCount = pendingStats.Count
-	summary.PendingValue = pendingStats.Value
-
-	// Calcula taxa de cumprimento
-	var completedCount int64
-	if err := r.db.Model(&models.SalesOrder{}).
-		Where("contact_id = ? AND status = ?", contactID, models.SOStatusCompleted).
-		Count(&completedCount).Error; err != nil {
-		r.logger.Warn("erro ao contar sales orders completados", zap.Error(err))
-	}
-
-	if summary.TotalOrders > 0 {
-		summary.FulfillmentRate = float64(completedCount) / float64(summary.TotalOrders) * 100
-	}
-
-	// Último sales order
-	var lastOrder models.SalesOrder
-	if err := r.db.Model(&models.SalesOrder{}).
-		Where("contact_id = ?", contactID).
-		Order("created_at DESC").
-		First(&lastOrder).Error; err == nil {
-		summary.LastOrderDate = lastOrder.CreatedAt
-	}
-
-	return summary, nil
+	return query
 }
 
-// GetSalesOrdersByContactType busca sales orders por tipo de contato
-func (r *salesOrderRepository) GetSalesOrdersByContactType(contactType string, params *pagination.PaginationParams) (*pagination.PaginatedResult, error) {
-	var salesOrders []models.SalesOrder
-	var total int64
+// Método auxiliar para busca textual
+func (r *salesOrderRepository) applyTextSearchFilter(query *gorm.DB, filter SalesOrderFilter) *gorm.DB {
+	if filter.SearchQuery != "" {
+		searchPattern := "%" + filter.SearchQuery + "%"
 
-	// Primeiro, busca os IDs dos contatos do tipo especificado
-	var contactIDs []int
-	if err := r.db.Model(&contact.Contact{}).
-		Where("type = ?", contactType).
-		Pluck("id", &contactIDs).Error; err != nil {
-		return nil, errors.WrapError(err, "falha ao buscar contatos por tipo")
+		// Fazemos um join com contatos para buscar também nos campos de contato
+		query = query.Joins("LEFT JOIN contacts ON contacts.id = sales_orders.contact_id").
+			Where("sales_orders.so_no LIKE ? OR sales_orders.notes LIKE ? OR contacts.name LIKE ? OR contacts.company_name LIKE ?",
+				searchPattern, searchPattern, searchPattern, searchPattern)
 	}
 
-	if len(contactIDs) == 0 {
-		// Retorna resultado vazio se não houver contatos do tipo especificado
-		return pagination.NewPaginatedResult(0, params.Page, params.PageSize, []models.SalesOrder{}), nil
-	}
-
-	// Busca os sales orders dos contatos encontrados
-	query := r.db.Model(&models.SalesOrder{}).Where("contact_id IN ?", contactIDs)
-
-	// Conta o total
-	if err := query.Count(&total).Error; err != nil {
-		r.logger.Error("erro ao contar sales orders por tipo de contato", zap.Error(err), zap.String("contact_type", contactType))
-		return nil, errors.WrapError(err, "falha ao contar sales orders por tipo de contato")
-	}
-
-	// Aplica paginação e busca os dados
-	offset := pagination.CalculateOffset(params.Page, params.PageSize)
-	if err := query.Preload("Contact").
-		Preload("Items").
-		Order("created_at DESC").
-		Limit(params.PageSize).
-		Offset(offset).
-		Find(&salesOrders).Error; err != nil {
-		r.logger.Error("erro ao buscar sales orders por tipo de contato", zap.Error(err), zap.String("contact_type", contactType))
-		return nil, errors.WrapError(err, "falha ao buscar sales orders por tipo de contato")
-	}
-
-	result := pagination.NewPaginatedResult(total, params.Page, params.PageSize, salesOrders)
-	return result, nil
-}
-
-// CreateInvoiceFromSalesOrder cria uma invoice a partir de um sales order
-func (r *salesOrderRepository) CreateInvoiceFromSalesOrder(salesOrderID int) error {
-	// Busca o sales order
-	salesOrder, err := r.GetSalesOrderByID(salesOrderID)
-	if err != nil {
-		return err
-	}
-
-	// Verifica se o sales order está confirmado
-	if salesOrder.Status != models.SOStatusConfirmed && salesOrder.Status != models.SOStatusCompleted {
-		return errors.WrapError(gorm.ErrInvalidData, "sales order não está confirmado")
-	}
-
-	// TODO: Implementar a criação da invoice
-	// Isso seria feito em conjunto com o InvoiceRepository
-	// Por enquanto, apenas registramos a operação
-	r.logger.Info("sales order pronto para criação de invoice", zap.Int("sales_order_id", salesOrderID))
-
-	return nil
-}
-
-// CreatePurchaseOrderFromSalesOrder cria um purchase order a partir de um sales order
-func (r *salesOrderRepository) CreatePurchaseOrderFromSalesOrder(salesOrderID int) error {
-	// Busca o sales order
-	salesOrder, err := r.GetSalesOrderByID(salesOrderID)
-	if err != nil {
-		return err
-	}
-
-	// Verifica se o sales order está confirmado
-	if salesOrder.Status != models.SOStatusConfirmed {
-		return errors.WrapError(gorm.ErrInvalidData, "sales order não está confirmado")
-	}
-
-	// TODO: Implementar a criação do purchase order
-	// Isso seria feito em conjunto com o PurchaseOrderRepository
-	// Por enquanto, apenas registramos a operação
-	r.logger.Info("sales order pronto para criação de purchase order", zap.Int("sales_order_id", salesOrderID))
-
-	return nil
-}
-
-// GetPendingSalesOrders busca sales orders pendentes
-func (r *salesOrderRepository) GetPendingSalesOrders(params *pagination.PaginationParams) (*pagination.PaginatedResult, error) {
-	var salesOrders []models.SalesOrder
-	var total int64
-
-	pendingStatuses := []string{models.SOStatusDraft, models.SOStatusConfirmed, models.SOStatusProcessing}
-	query := r.db.Model(&models.SalesOrder{}).Where("status IN ?", pendingStatuses)
-
-	// Conta o total
-	if err := query.Count(&total).Error; err != nil {
-		r.logger.Error("erro ao contar sales orders pendentes", zap.Error(err))
-		return nil, errors.WrapError(err, "falha ao contar sales orders pendentes")
-	}
-
-	// Aplica paginação e busca os dados
-	offset := pagination.CalculateOffset(params.Page, params.PageSize)
-	if err := query.Preload("Contact").
-		Order("created_at ASC").
-		Limit(params.PageSize).
-		Offset(offset).
-		Find(&salesOrders).Error; err != nil {
-		r.logger.Error("erro ao buscar sales orders pendentes", zap.Error(err))
-		return nil, errors.WrapError(err, "falha ao buscar sales orders pendentes")
-	}
-
-	result := pagination.NewPaginatedResult(total, params.Page, params.PageSize, salesOrders)
-	return result, nil
+	return query
 }
 
 // generateSalesOrderNumber gera um número único para o sales order
