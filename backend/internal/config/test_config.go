@@ -22,7 +22,7 @@ func LoadTestDBConfig() TestDBConfig {
 		Port:     getEnvOrDefault("TEST_DB_PORT", "5432"),
 		User:     getEnvOrDefault("TEST_DB_USER", "erp_user"),
 		Password: getEnvOrDefault("TEST_DB_PASSWORD", "changeme"),
-		DBName:   getEnvOrDefault("TEST_DB_NAME", "erp_test"),
+		DBName:   getEnvOrDefault("TEST_DB_NAME", "erp_db_test"),
 	}
 }
 
