@@ -5,6 +5,7 @@ import (
 	contact "ERP-ONSMART/backend/internal/modules/contact/models"
 	"ERP-ONSMART/backend/internal/modules/sales/models"
 	"ERP-ONSMART/backend/internal/utils/pagination"
+	"context"
 	"time"
 
 	"go.uber.org/zap"
@@ -27,12 +28,12 @@ type QuotationFilter struct {
 }
 
 // GetAllQuotations retorna todas as quotations com paginação
-func (r *quotationRepository) GetAllQuotations(params *pagination.PaginationParams) (*pagination.PaginatedResult, error) {
+func (r *quotationRepository) GetAllQuotations(ctx context.Context, params *pagination.PaginationParams) (*pagination.PaginatedResult, error) {
 	var quotations []models.Quotation
 	var total int64
 
 	// Query base
-	query := r.db.Model(&models.Quotation{})
+	query := r.db.WithContext(ctx).Model(&models.Quotation{})
 
 	// Conta o total
 	if err := query.Count(&total).Error; err != nil {
@@ -57,11 +58,11 @@ func (r *quotationRepository) GetAllQuotations(params *pagination.PaginationPara
 }
 
 // GetQuotationsByStatus busca quotations por status
-func (r *quotationRepository) GetQuotationsByStatus(status string, params *pagination.PaginationParams) (*pagination.PaginatedResult, error) {
+func (r *quotationRepository) GetQuotationsByStatus(ctx context.Context, status string, params *pagination.PaginationParams) (*pagination.PaginatedResult, error) {
 	var quotations []models.Quotation
 	var total int64
 
-	query := r.db.Model(&models.Quotation{}).Where("status = ?", status)
+	query := r.db.WithContext(ctx).Model(&models.Quotation{}).Where("status = ?", status)
 
 	// Conta o total
 	if err := query.Count(&total).Error; err != nil {
@@ -85,11 +86,11 @@ func (r *quotationRepository) GetQuotationsByStatus(status string, params *pagin
 }
 
 // GetQuotationsByContact busca quotations por contato
-func (r *quotationRepository) GetQuotationsByContact(contactID int, params *pagination.PaginationParams) (*pagination.PaginatedResult, error) {
+func (r *quotationRepository) GetQuotationsByContact(ctx context.Context, contactID int, params *pagination.PaginationParams) (*pagination.PaginatedResult, error) {
 	var quotations []models.Quotation
 	var total int64
 
-	query := r.db.Model(&models.Quotation{}).Where("contact_id = ?", contactID)
+	query := r.db.WithContext(ctx).Model(&models.Quotation{}).Where("contact_id = ?", contactID)
 
 	// Conta o total
 	if err := query.Count(&total).Error; err != nil {
@@ -114,12 +115,12 @@ func (r *quotationRepository) GetQuotationsByContact(contactID int, params *pagi
 }
 
 // GetExpiredQuotations busca quotations expiradas
-func (r *quotationRepository) GetExpiredQuotations(params *pagination.PaginationParams) (*pagination.PaginatedResult, error) {
+func (r *quotationRepository) GetExpiredQuotations(ctx context.Context, params *pagination.PaginationParams) (*pagination.PaginatedResult, error) {
 	var quotations []models.Quotation
 	var total int64
 
 	now := time.Now()
-	query := r.db.Model(&models.Quotation{}).
+	query := r.db.WithContext(ctx).Model(&models.Quotation{}).
 		Where("expiry_date < ? AND status NOT IN ?", now, []string{models.QuotationStatusAccepted, models.QuotationStatusRejected, models.QuotationStatusCancelled})
 
 	// Conta o total
@@ -144,11 +145,11 @@ func (r *quotationRepository) GetExpiredQuotations(params *pagination.Pagination
 }
 
 // GetQuotationsByPeriod busca quotations por período (usando created_at)
-func (r *quotationRepository) GetQuotationsByPeriod(startDate, endDate time.Time, params *pagination.PaginationParams) (*pagination.PaginatedResult, error) {
+func (r *quotationRepository) GetQuotationsByPeriod(ctx context.Context, startDate, endDate time.Time, params *pagination.PaginationParams) (*pagination.PaginatedResult, error) {
 	var quotations []models.Quotation
 	var total int64
 
-	query := r.db.Model(&models.Quotation{}).
+	query := r.db.WithContext(ctx).Model(&models.Quotation{}).
 		Where("created_at >= ? AND created_at <= ?", startDate, endDate)
 
 	// Conta o total
@@ -174,11 +175,11 @@ func (r *quotationRepository) GetQuotationsByPeriod(startDate, endDate time.Time
 }
 
 // GetQuotationsByExpiryDateRange busca quotations por período de expiração
-func (r *quotationRepository) GetQuotationsByExpiryDateRange(startDate, endDate time.Time, params *pagination.PaginationParams) (*pagination.PaginatedResult, error) {
+func (r *quotationRepository) GetQuotationsByExpiryDateRange(ctx context.Context, startDate, endDate time.Time, params *pagination.PaginationParams) (*pagination.PaginatedResult, error) {
 	var quotations []models.Quotation
 	var total int64
 
-	query := r.db.Model(&models.Quotation{}).
+	query := r.db.WithContext(ctx).Model(&models.Quotation{}).
 		Where("expiry_date >= ? AND expiry_date <= ?", startDate, endDate)
 
 	// Conta o total
@@ -204,11 +205,11 @@ func (r *quotationRepository) GetQuotationsByExpiryDateRange(startDate, endDate 
 }
 
 // SearchQuotations busca quotations com filtros combinados
-func (r *quotationRepository) SearchQuotations(filter QuotationFilter, params *pagination.PaginationParams) (*pagination.PaginatedResult, error) {
+func (r *quotationRepository) SearchQuotations(ctx context.Context, filter QuotationFilter, params *pagination.PaginationParams) (*pagination.PaginatedResult, error) {
 	var quotations []models.Quotation
 	var total int64
 
-	query := r.db.Model(&models.Quotation{})
+	query := r.db.WithContext(ctx).Model(&models.Quotation{})
 
 	// Aplica os filtros
 	if len(filter.Status) > 0 {
@@ -221,7 +222,7 @@ func (r *quotationRepository) SearchQuotations(filter QuotationFilter, params *p
 
 	// Filtro por tipo de contato ou pessoa
 	if filter.ContactType != "" || filter.PersonType != "" {
-		contactQuery := r.db.Model(&contact.Contact{})
+		contactQuery := r.db.WithContext(ctx).Model(&contact.Contact{})
 		if filter.ContactType != "" {
 			contactQuery = contactQuery.Where("type = ?", filter.ContactType)
 		}
@@ -290,13 +291,13 @@ func (r *quotationRepository) SearchQuotations(filter QuotationFilter, params *p
 }
 
 // GetQuotationsByContactType busca quotations por tipo de contato
-func (r *quotationRepository) GetQuotationsByContactType(contactType string, params *pagination.PaginationParams) (*pagination.PaginatedResult, error) {
+func (r *quotationRepository) GetQuotationsByContactType(ctx context.Context, contactType string, params *pagination.PaginationParams) (*pagination.PaginatedResult, error) {
 	var quotations []models.Quotation
 	var total int64
 
 	// Primeiro, busca os IDs dos contatos do tipo especificado
 	var contactIDs []int
-	if err := r.db.Model(&contact.Contact{}).
+	if err := r.db.WithContext(ctx).Model(&contact.Contact{}).
 		Where("type = ?", contactType).
 		Pluck("id", &contactIDs).Error; err != nil {
 		return nil, errors.WrapError(err, "falha ao buscar contatos por tipo")
@@ -308,7 +309,7 @@ func (r *quotationRepository) GetQuotationsByContactType(contactType string, par
 	}
 
 	// Busca as quotations dos contatos encontrados
-	query := r.db.Model(&models.Quotation{}).Where("contact_id IN ?", contactIDs)
+	query := r.db.WithContext(ctx).Model(&models.Quotation{}).Where("contact_id IN ?", contactIDs)
 
 	// Conta o total
 	if err := query.Count(&total).Error; err != nil {
@@ -333,14 +334,14 @@ func (r *quotationRepository) GetQuotationsByContactType(contactType string, par
 }
 
 // GetExpiringQuotations busca quotations que expirarão em X dias
-func (r *quotationRepository) GetExpiringQuotations(days int, params *pagination.PaginationParams) (*pagination.PaginatedResult, error) {
+func (r *quotationRepository) GetExpiringQuotations(ctx context.Context, days int, params *pagination.PaginationParams) (*pagination.PaginatedResult, error) {
 	var quotations []models.Quotation
 	var total int64
 
 	now := time.Now()
 	expiryLimit := now.AddDate(0, 0, days)
 
-	query := r.db.Model(&models.Quotation{}).
+	query := r.db.WithContext(ctx).Model(&models.Quotation{}).
 		Where("expiry_date >= ? AND expiry_date <= ?", now, expiryLimit).
 		Where("status IN ?", []string{models.QuotationStatusDraft, models.QuotationStatusSent})
 
