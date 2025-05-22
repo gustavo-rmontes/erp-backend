@@ -144,8 +144,8 @@ func (r *quotationRepository) GetExpiredQuotations(ctx context.Context, params *
 	return result, nil
 }
 
-// GetQuotationsByPeriod busca quotations por período (usando created_at)
-func (r *quotationRepository) GetQuotationsByPeriod(ctx context.Context, startDate, endDate time.Time, params *pagination.PaginationParams) (*pagination.PaginatedResult, error) {
+// GetQuotationsByDateRange busca quotations por período (usando created_at)
+func (r *quotationRepository) GetQuotationsByDateRange(ctx context.Context, startDate, endDate time.Time, params *pagination.PaginationParams) (*pagination.PaginatedResult, error) {
 	var quotations []models.Quotation
 	var total int64
 
@@ -174,8 +174,8 @@ func (r *quotationRepository) GetQuotationsByPeriod(ctx context.Context, startDa
 	return result, nil
 }
 
-// GetQuotationsByExpiryDateRange busca quotations por período de expiração
-func (r *quotationRepository) GetQuotationsByExpiryDateRange(ctx context.Context, startDate, endDate time.Time, params *pagination.PaginationParams) (*pagination.PaginatedResult, error) {
+// GetQuotationsByExpiryRange busca quotations por período de expiração
+func (r *quotationRepository) GetQuotationsByExpiryRange(ctx context.Context, startDate, endDate time.Time, params *pagination.PaginationParams) (*pagination.PaginatedResult, error) {
 	var quotations []models.Quotation
 	var total int64
 
