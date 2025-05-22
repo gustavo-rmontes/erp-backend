@@ -314,3 +314,180 @@ func cleanupSalesOrders(t *testing.T, db *gorm.DB, logger *zap.Logger, salesOrde
 		}
 	}
 }
+
+// Função auxiliar para criar purchase order de teste
+func createTestPurchaseOrder(t *testing.T, db *gorm.DB, logger *zap.Logger) *models.PurchaseOrder {
+	// Cria repositório de purchase order
+	repo := repository.NewPurchaseOrderRepository(db, logger)
+
+	// Cria um contexto para as chamadas
+	ctx := context.Background()
+
+	// Cria o purchase order (sem SalesOrderID para evitar problemas de FK)
+	purchaseOrder := &models.PurchaseOrder{
+		ContactID: 1,
+		// SalesOrderID omitido (será tratado como NULL)
+		Status:          "",
+		ExpectedDate:    time.Now().AddDate(0, 0, 30), // 30 dias
+		SubTotal:        2000.0,
+		TaxTotal:        360.0,
+		DiscountTotal:   100.0,
+		GrandTotal:      2260.0,
+		Notes:           "Purchase order de teste via testes automatizados",
+		PaymentTerms:    "30 dias",
+		ShippingAddress: "Rua de Fornecedor, 456 - Cidade Fornecedor",
+	}
+
+	err := repo.CreatePurchaseOrder(ctx, purchaseOrder)
+	assert.NoError(t, err)
+	assert.NotZero(t, purchaseOrder.ID)
+	assert.NotEmpty(t, purchaseOrder.PONo)
+	assert.Equal(t, models.POStatusDraft, purchaseOrder.Status)
+
+	return purchaseOrder
+}
+
+// Função auxiliar para criar purchase order com itens
+func createTestPurchaseOrderWithItems(t *testing.T, db *gorm.DB, logger *zap.Logger) *models.PurchaseOrder {
+	// Limpa dados existentes para evitar conflitos
+	err := db.Exec("DELETE FROM purchase_order_items").Error
+	assert.NoError(t, err)
+
+	// Cria um purchase order básico primeiro
+	purchaseOrder := createTestPurchaseOrder(t, db, logger)
+
+	// Adiciona itens ao purchase order
+	repo := repository.NewPurchaseOrderRepository(db, logger)
+	ctx := context.Background()
+
+	// Criamos itens manualmente sem definir IDs
+	items := []models.POItem{
+		{
+			PurchaseOrderID: purchaseOrder.ID,
+			ProductID:       1,
+			ProductName:     "Produto de Compra 1",
+			ProductCode:     "PC001",
+			Description:     "Descrição do produto para compra 1",
+			Quantity:        5,
+			UnitPrice:       200.0,
+			Discount:        20.0,
+			Tax:             18.0,
+			Total:           1144.0, // (5 * 200 - 20) * 1.18
+		},
+		{
+			PurchaseOrderID: purchaseOrder.ID,
+			ProductID:       2,
+			ProductName:     "Produto de Compra 2",
+			ProductCode:     "PC002",
+			Description:     "Descrição do produto para compra 2",
+			Quantity:        3,
+			UnitPrice:       150.0,
+			Discount:        0.0,
+			Tax:             18.0,
+			Total:           531.0, // (3 * 150) * 1.18
+		},
+	}
+
+	// Adiciona os itens diretamente no banco (sem IDs definidos)
+	for _, item := range items {
+		err := db.Create(&item).Error
+		assert.NoError(t, err)
+	}
+
+	// Atualiza o valor total do purchase order
+	purchaseOrder.SubTotal = 1480.0   // (5*200) + (3*150) - 20
+	purchaseOrder.TaxTotal = 266.4    // 1480 * 0.18
+	purchaseOrder.GrandTotal = 1746.4 // 1480 + 266.4
+
+	err = repo.UpdatePurchaseOrder(ctx, purchaseOrder.ID, purchaseOrder)
+	assert.NoError(t, err)
+
+	// Busca o purchase order novamente para ter os itens carregados
+	updatedPurchaseOrder, err := repo.GetPurchaseOrderByID(ctx, purchaseOrder.ID)
+	assert.NoError(t, err)
+
+	return updatedPurchaseOrder
+}
+
+// Função auxiliar para criar purchase order a partir de um sales order
+func createTestPurchaseOrderFromSalesOrder(t *testing.T, db *gorm.DB, logger *zap.Logger, salesOrderID int) *models.PurchaseOrder {
+	// Cria repositório de purchase order
+	repo := repository.NewPurchaseOrderRepository(db, logger)
+
+	// Cria um contexto para as chamadas
+	ctx := context.Background()
+
+	// Busca o sales order para pegar alguns dados
+	salesRepo := repository.NewSalesOrderRepository(db, logger)
+	salesOrder, err := salesRepo.GetSalesOrderByID(ctx, salesOrderID)
+	assert.NoError(t, err)
+
+	// Cria o purchase order baseado no sales order
+	purchaseOrder := &models.PurchaseOrder{
+		SalesOrderID:    salesOrderID,
+		SONo:            salesOrder.SONo,
+		ContactID:       salesOrder.ContactID, // Pode ser diferente em casos reais
+		Status:          models.POStatusDraft,
+		ExpectedDate:    time.Now().AddDate(0, 0, 45), // 45 dias para compra
+		SubTotal:        salesOrder.SubTotal,
+		TaxTotal:        salesOrder.TaxTotal,
+		DiscountTotal:   salesOrder.DiscountTotal,
+		GrandTotal:      salesOrder.GrandTotal,
+		Notes:           "Purchase order criado a partir de sales order " + salesOrder.SONo,
+		PaymentTerms:    "45 dias",
+		ShippingAddress: "Endereço do Fornecedor, 789 - Cidade Fornecedor",
+	}
+
+	err = repo.CreatePurchaseOrder(ctx, purchaseOrder)
+	assert.NoError(t, err)
+	assert.NotZero(t, purchaseOrder.ID)
+	assert.NotEmpty(t, purchaseOrder.PONo)
+	assert.Equal(t, salesOrderID, purchaseOrder.SalesOrderID)
+
+	return purchaseOrder
+}
+
+// Função auxiliar para criar múltiplos purchase orders para teste de paginação
+func createMultiplePurchaseOrders(t *testing.T, db *gorm.DB, logger *zap.Logger, count int) []*models.PurchaseOrder {
+	var purchaseOrders []*models.PurchaseOrder
+
+	for i := 0; i < count; i++ {
+		purchaseOrder := createTestPurchaseOrder(t, db, logger)
+
+		// Varia alguns campos para tornar os dados mais realistas
+		purchaseOrder.ContactID = (i % 3) + 1                       // Varia entre contatos 1, 2, 3
+		purchaseOrder.ExpectedDate = time.Now().AddDate(0, 0, i*10) // Varia datas de entrega
+		purchaseOrder.GrandTotal = 2000.0 + float64(i*200)          // Varia valores
+
+		if i%3 == 0 {
+			purchaseOrder.Status = models.POStatusConfirmed
+		} else if i%3 == 1 {
+			purchaseOrder.Status = models.POStatusSent
+		} else {
+			purchaseOrder.Status = models.POStatusDraft
+		}
+
+		// Atualiza no banco
+		repo := repository.NewPurchaseOrderRepository(db, logger)
+		ctx := context.Background()
+		err := repo.UpdatePurchaseOrder(ctx, purchaseOrder.ID, purchaseOrder)
+		assert.NoError(t, err)
+
+		purchaseOrders = append(purchaseOrders, purchaseOrder)
+	}
+
+	return purchaseOrders
+}
+
+// Função auxiliar para limpar purchase orders de teste
+func cleanupPurchaseOrders(t *testing.T, db *gorm.DB, logger *zap.Logger, purchaseOrders []*models.PurchaseOrder) {
+	repo := repository.NewPurchaseOrderRepository(db, logger)
+	ctx := context.Background()
+
+	for _, purchaseOrder := range purchaseOrders {
+		err := repo.DeletePurchaseOrder(ctx, purchaseOrder.ID)
+		if err != nil {
+			t.Logf("Aviso: Não foi possível deletar purchase order %d: %v", purchaseOrder.ID, err)
+		}
+	}
+}
