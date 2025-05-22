@@ -294,8 +294,8 @@ func (r *salesOrderRepository) GetSalesOrdersByPeriod(ctx context.Context, start
 	return result, nil
 }
 
-// GetSalesOrdersByExpectedDate busca sales orders por data esperada
-func (r *salesOrderRepository) GetSalesOrdersByExpectedDate(ctx context.Context, startDate, endDate time.Time, params *pagination.PaginationParams) (*pagination.PaginatedResult, error) {
+// GetSalesOrdersByDateRange busca sales orders por data esperada
+func (r *salesOrderRepository) GetSalesOrdersByDateRange(ctx context.Context, startDate, endDate time.Time, params *pagination.PaginationParams) (*pagination.PaginatedResult, error) {
 	// Verificação inicial do contexto
 	if ctx.Err() != nil {
 		switch ctx.Err() {
