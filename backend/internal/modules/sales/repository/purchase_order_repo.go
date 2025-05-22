@@ -16,23 +16,25 @@ import (
 
 // PurchaseOrderRepository define as operações do repositório de purchase orders
 type PurchaseOrderRepository interface {
+	// CRUD básico
 	CreatePurchaseOrder(purchaseOrder *models.PurchaseOrder) error
 	GetPurchaseOrderByID(id int) (*models.PurchaseOrder, error)
-	GetAllPurchaseOrders(params *pagination.PaginationParams) (*pagination.PaginatedResult, error)
 	UpdatePurchaseOrder(id int, purchaseOrder *models.PurchaseOrder) error
 	DeletePurchaseOrder(id int) error
+
+	// Consultas com paginação
+	GetAllPurchaseOrders(params *pagination.PaginationParams) (*pagination.PaginatedResult, error)
 	GetPurchaseOrdersByStatus(status string, params *pagination.PaginationParams) (*pagination.PaginatedResult, error)
 	GetPurchaseOrdersByContact(contactID int, params *pagination.PaginationParams) (*pagination.PaginatedResult, error)
 	GetPurchaseOrdersBySalesOrder(salesOrderID int, params *pagination.PaginationParams) (*pagination.PaginatedResult, error)
 	GetPurchaseOrdersByPeriod(startDate, endDate time.Time, params *pagination.PaginationParams) (*pagination.PaginatedResult, error)
-	GetPurchaseOrdersByExpectedDate(startDate, endDate time.Time, params *pagination.PaginationParams) (*pagination.PaginatedResult, error)
-	SearchPurchaseOrders(filter PurchaseOrderFilter, params *pagination.PaginationParams) (*pagination.PaginatedResult, error)
-	GetPurchaseOrderStats(filter PurchaseOrderFilter) (*PurchaseOrderStats, error)
-	GetContactPurchaseOrdersSummary(contactID int) (*ContactPurchaseOrdersSummary, error)
+	GetPurchaseOrdersByExpectedDateRange(startDate, endDate time.Time, params *pagination.PaginationParams) (*pagination.PaginatedResult, error)
 	GetPurchaseOrdersByContactType(contactType string, params *pagination.PaginationParams) (*pagination.PaginatedResult, error)
-	CreateDeliveryFromPurchaseOrder(purchaseOrderID int) error
 	GetPendingPurchaseOrders(params *pagination.PaginationParams) (*pagination.PaginatedResult, error)
 	GetOverduePurchaseOrders(params *pagination.PaginationParams) (*pagination.PaginatedResult, error)
+
+	// Busca avançada (opcional, considere mover para serviço se contiver muita lógica de negócio)
+	SearchPurchaseOrders(filter PurchaseOrderFilter, params *pagination.PaginationParams) (*pagination.PaginatedResult, error)
 }
 
 // PurchaseOrderFilter define os filtros para busca avançada
@@ -361,8 +363,8 @@ func (r *purchaseOrderRepository) GetPurchaseOrdersByPeriod(startDate, endDate t
 	return result, nil
 }
 
-// GetPurchaseOrdersByExpectedDate busca purchase orders por data esperada
-func (r *purchaseOrderRepository) GetPurchaseOrdersByExpectedDate(startDate, endDate time.Time, params *pagination.PaginationParams) (*pagination.PaginatedResult, error) {
+// GetPurchaseOrdersByExpectedDateRange busca purchase orders por data esperada
+func (r *purchaseOrderRepository) GetPurchaseOrdersByExpectedDateRange(startDate, endDate time.Time, params *pagination.PaginationParams) (*pagination.PaginatedResult, error) {
 	var purchaseOrders []models.PurchaseOrder
 	var total int64
 
@@ -498,210 +500,6 @@ func (r *purchaseOrderRepository) SearchPurchaseOrders(filter PurchaseOrderFilte
 	return result, nil
 }
 
-// GetPurchaseOrderStats retorna estatísticas de purchase orders
-func (r *purchaseOrderRepository) GetPurchaseOrderStats(filter PurchaseOrderFilter) (*PurchaseOrderStats, error) {
-	stats := &PurchaseOrderStats{
-		CountByStatus: make(map[string]int),
-	}
-
-	query := r.db.Model(&models.PurchaseOrder{})
-
-	// Aplica filtros básicos
-	if filter.ContactID > 0 {
-		query = query.Where("contact_id = ?", filter.ContactID)
-	}
-
-	if !filter.DateRangeStart.IsZero() && !filter.DateRangeEnd.IsZero() {
-		query = query.Where("created_at >= ? AND created_at <= ?", filter.DateRangeStart, filter.DateRangeEnd)
-	}
-
-	// Contagem total e valores
-	var result struct {
-		Count      int
-		TotalValue float64
-	}
-
-	if err := query.Select("COUNT(*) as count, SUM(grand_total) as total_value").
-		Scan(&result).Error; err != nil {
-		return nil, errors.WrapError(err, "falha ao calcular estatísticas")
-	}
-
-	stats.TotalOrders = result.Count
-	stats.TotalValue = result.TotalValue
-
-	// Valores por status específicos
-	statusQueries := map[string]string{
-		"draft":     models.POStatusDraft,
-		"sent":      models.POStatusSent,
-		"confirmed": models.POStatusConfirmed,
-		"received":  models.POStatusReceived,
-		"cancelled": models.POStatusCancelled,
-	}
-
-	for key, status := range statusQueries {
-		var value float64
-		if err := query.Where("status = ?", status).
-			Select("SUM(grand_total)").
-			Scan(&value).Error; err != nil {
-			r.logger.Warn("erro ao calcular valor para status", zap.String("status", status), zap.Error(err))
-		}
-
-		switch key {
-		case "draft":
-			stats.TotalDraft = value
-		case "sent":
-			stats.TotalSent = value
-		case "confirmed":
-			stats.TotalConfirmed = value
-		case "received":
-			stats.TotalReceived = value
-		case "cancelled":
-			stats.TotalCancelled = value
-		}
-	}
-
-	// Contagem por status
-	rows, err := query.Select("status, COUNT(*) as count").
-		Group("status").
-		Rows()
-	if err != nil {
-		return nil, errors.WrapError(err, "falha ao contar por status")
-	}
-	defer rows.Close()
-
-	for rows.Next() {
-		var status string
-		var count int
-		if err := rows.Scan(&status, &count); err != nil {
-			continue
-		}
-		stats.CountByStatus[status] = count
-	}
-
-	// Calcula taxa de cumprimento
-	receivedCount := stats.CountByStatus[models.POStatusReceived]
-	totalCount := stats.TotalOrders
-	if totalCount > 0 {
-		stats.FulfillmentRate = float64(receivedCount) / float64(totalCount) * 100
-	}
-
-	return stats, nil
-}
-
-// GetContactPurchaseOrdersSummary retorna um resumo dos purchase orders de um contato
-func (r *purchaseOrderRepository) GetContactPurchaseOrdersSummary(contactID int) (*ContactPurchaseOrdersSummary, error) {
-	summary := &ContactPurchaseOrdersSummary{
-		ContactID: contactID,
-	}
-
-	// Busca informações do contato
-	var contact contact.Contact
-	if err := r.db.First(&contact, contactID).Error; err != nil {
-		return nil, errors.WrapError(err, "falha ao buscar contato")
-	}
-
-	summary.ContactName = contact.Name
-	if contact.CompanyName != "" {
-		summary.ContactName = contact.CompanyName
-	}
-	summary.ContactType = contact.Type
-
-	// Estatísticas dos purchase orders
-	var stats struct {
-		Count      int
-		TotalValue float64
-	}
-
-	if err := r.db.Model(&models.PurchaseOrder{}).
-		Where("contact_id = ?", contactID).
-		Select("COUNT(*) as count, SUM(grand_total) as total_value").
-		Scan(&stats).Error; err != nil {
-		return nil, errors.WrapError(err, "falha ao calcular estatísticas do contato")
-	}
-
-	summary.TotalOrders = stats.Count
-	summary.TotalValue = stats.TotalValue
-
-	// Valores por status
-	statusQueries := map[string]string{
-		"received":  models.POStatusReceived,
-		"cancelled": models.POStatusCancelled,
-	}
-
-	for key, status := range statusQueries {
-		var value float64
-		if err := r.db.Model(&models.PurchaseOrder{}).
-			Where("contact_id = ? AND status = ?", contactID, status).
-			Select("SUM(grand_total)").
-			Scan(&value).Error; err != nil {
-			r.logger.Warn("erro ao calcular valor para status", zap.String("status", status), zap.Error(err))
-		}
-
-		switch key {
-		case "received":
-			summary.TotalReceived = value
-		case "cancelled":
-			summary.TotalCancelled = value
-		}
-	}
-
-	// Purchase orders pendentes
-	var pendingStats struct {
-		Count int
-		Value float64
-	}
-
-	if err := r.db.Model(&models.PurchaseOrder{}).
-		Where("contact_id = ? AND status IN ?", contactID, []string{models.POStatusDraft, models.POStatusSent, models.POStatusConfirmed}).
-		Select("COUNT(*) as count, SUM(grand_total) as value").
-		Scan(&pendingStats).Error; err != nil {
-		r.logger.Warn("erro ao calcular purchase orders pendentes do contato", zap.Error(err))
-	}
-
-	summary.PendingCount = pendingStats.Count
-	summary.PendingValue = pendingStats.Value
-
-	// Purchase orders vencidos
-	now := time.Now()
-	var overdueStats struct {
-		Count int
-		Value float64
-	}
-
-	if err := r.db.Model(&models.PurchaseOrder{}).
-		Where("contact_id = ? AND expected_date < ? AND status IN ?", contactID, now, []string{models.POStatusDraft, models.POStatusSent, models.POStatusConfirmed}).
-		Select("COUNT(*) as count, SUM(grand_total) as value").
-		Scan(&overdueStats).Error; err != nil {
-		r.logger.Warn("erro ao calcular purchase orders vencidos do contato", zap.Error(err))
-	}
-
-	summary.OverdueCount = overdueStats.Count
-	summary.OverdueValue = overdueStats.Value
-
-	// Calcula taxa de cumprimento
-	var receivedCount int64
-	if err := r.db.Model(&models.PurchaseOrder{}).
-		Where("contact_id = ? AND status = ?", contactID, models.POStatusReceived).
-		Count(&receivedCount).Error; err != nil {
-		r.logger.Warn("erro ao contar purchase orders recebidos", zap.Error(err))
-	}
-
-	if summary.TotalOrders > 0 {
-		summary.FulfillmentRate = float64(receivedCount) / float64(summary.TotalOrders) * 100
-	}
-
-	// Último purchase order
-	var lastOrder models.PurchaseOrder
-	if err := r.db.Model(&models.PurchaseOrder{}).
-		Where("contact_id = ?", contactID).
-		Order("created_at DESC").
-		First(&lastOrder).Error; err == nil {
-		summary.LastOrderDate = lastOrder.CreatedAt
-	}
-
-	return summary, nil
-}
-
 // GetPurchaseOrdersByContactType busca purchase orders por tipo de contato
 func (r *purchaseOrderRepository) GetPurchaseOrdersByContactType(contactType string, params *pagination.PaginationParams) (*pagination.PaginatedResult, error) {
 	var purchaseOrders []models.PurchaseOrder
@@ -743,27 +541,6 @@ func (r *purchaseOrderRepository) GetPurchaseOrdersByContactType(contactType str
 
 	result := pagination.NewPaginatedResult(total, params.Page, params.PageSize, purchaseOrders)
 	return result, nil
-}
-
-// CreateDeliveryFromPurchaseOrder cria uma delivery a partir de um purchase order
-func (r *purchaseOrderRepository) CreateDeliveryFromPurchaseOrder(purchaseOrderID int) error {
-	// Busca o purchase order
-	purchaseOrder, err := r.GetPurchaseOrderByID(purchaseOrderID)
-	if err != nil {
-		return err
-	}
-
-	// Verifica se o purchase order está confirmado
-	if purchaseOrder.Status != models.POStatusConfirmed {
-		return errors.WrapError(gorm.ErrInvalidData, "purchase order não está confirmado")
-	}
-
-	// TODO: Implementar a criação da delivery
-	// Isso seria feito em conjunto com o DeliveryRepository
-	// Por enquanto, apenas registramos a operação
-	r.logger.Info("purchase order pronto para criação de delivery", zap.Int("purchase_order_id", purchaseOrderID))
-
-	return nil
 }
 
 // GetPendingPurchaseOrders busca purchase orders pendentes
