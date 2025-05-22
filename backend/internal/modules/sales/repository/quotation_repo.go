@@ -25,8 +25,8 @@ type QuotationRepository interface {
 	GetAllQuotations(ctx context.Context, params *pagination.PaginationParams) (*pagination.PaginatedResult, error)
 	GetQuotationsByStatus(ctx context.Context, status string, params *pagination.PaginationParams) (*pagination.PaginatedResult, error)
 	GetQuotationsByContact(ctx context.Context, contactID int, params *pagination.PaginationParams) (*pagination.PaginatedResult, error)
-	GetQuotationsByPeriod(ctx context.Context, startDate, endDate time.Time, params *pagination.PaginationParams) (*pagination.PaginatedResult, error)
-	GetQuotationsByExpiryDateRange(ctx context.Context, startDate, endDate time.Time, params *pagination.PaginationParams) (*pagination.PaginatedResult, error)
+	GetQuotationsByDateRange(ctx context.Context, startDate, endDate time.Time, params *pagination.PaginationParams) (*pagination.PaginatedResult, error)
+	GetQuotationsByExpiryRange(ctx context.Context, startDate, endDate time.Time, params *pagination.PaginationParams) (*pagination.PaginatedResult, error)
 	GetQuotationsByContactType(ctx context.Context, contactType string, params *pagination.PaginationParams) (*pagination.PaginatedResult, error)
 	GetExpiredQuotations(ctx context.Context, params *pagination.PaginationParams) (*pagination.PaginatedResult, error)
 	GetExpiringQuotations(ctx context.Context, days int, params *pagination.PaginationParams) (*pagination.PaginatedResult, error)
@@ -200,14 +200,17 @@ func (r *quotationRepository) DeleteQuotation(ctx context.Context, id int) error
 
 // generateQuotationNumber gera um número único para a quotation
 func (r *quotationRepository) generateQuotationNumber() string {
-	// Implementação simples - você pode melhorar isso
 	var lastQuotation models.Quotation
-
-	r.db.Order("id DESC").First(&lastQuotation)
-
+	err := r.db.Order("id DESC").First(&lastQuotation).Error
 	year := time.Now().Year()
+	if err != nil {
+		// Se não houver registro, inicia a sequência em 1
+		if err == gorm.ErrRecordNotFound {
+			return fmt.Sprintf("QT-%d-%06d", year, 1)
+		}
+		// Outras situações, se necessário tratar
+	}
 	sequence := lastQuotation.ID + 1
-
 	return fmt.Sprintf("QT-%d-%06d", year, sequence)
 }
 
