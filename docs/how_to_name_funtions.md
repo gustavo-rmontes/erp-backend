@@ -62,6 +62,70 @@ API endpoints or controllers that call services.
 
 ---
 
+## 4. Extended Query Patterns
+Beyond basic CRUD operations, repositories often need specialized query methods. These patterns ensure consistency across complex data retrieval scenarios.
+
+### 4.1 Filter-Based Queries
+Use when filtering entities by specific criteria or relationships.
+
+| **Pattern** | **Usage** | **Repository Example** | **Service Example** |
+|-------------|-----------|------------------------|---------------------|
+| `Get[Entities]By[Criteria]` | Single filter queries | `GetQuotationsByStatus()` | `GetQuotationsByStatus()` |
+| `Get[Entities]By[RelatedEntity]` | Foreign key relationships | `GetQuotationsByContact()` | `GetQuotationsByContact()` |
+| `Get[Entities]By[DateRange]` | Time-based filtering | `GetQuotationsByPeriod()` | `GetQuotationsByPeriod()` |
+
+**Key Notes:**
+- Use the entity name in plural form for the return type
+- Be specific about the filtering criteria in the function name
+- Maintain consistency with parameter naming across similar functions
+
+### 4.2 State-Based Queries
+Use when querying entities based on their current state or condition.
+
+| **Pattern** | **Usage** | **Repository Example** | **Service Example** |
+|-------------|-----------|------------------------|---------------------|
+| `Get[Adjective][Entities]` | State-based filtering | `GetExpiredQuotations()` | `GetExpiredQuotations()` |
+| `Get[Condition][Entities]` | Conditional states | `GetExpiringQuotations()` | `GetExpiringQuotations()` |
+
+**Key Notes:**
+- Use descriptive adjectives that clearly indicate the entity state
+- Consider adding parameters when the condition is configurable (e.g., `GetExpiringQuotations(days int)`)
+
+### 4.3 Complex Search Operations
+Use when implementing multi-criteria searches or full-text search capabilities.
+
+| **Pattern** | **Usage** | **Repository Example** | **Service Example** |
+|-------------|-----------|------------------------|---------------------|
+| `Search[Entities]` | Multi-filter queries | `SearchQuotations(filter, params)` | `SearchQuotations(filter, params)` |
+
+**Key Notes:**
+- Always accept a filter struct and pagination parameters
+- Keep the function name simple while making the filter struct descriptive
+- Consider creating separate `[Entity]Filter` structs for type safety
+
+### 4.4 Counting Operations
+Use when you need to count entities without retrieving the full records.
+
+| **Pattern** | **Usage** | **Repository Example** | **Service Example** |
+|-------------|-----------|------------------------|---------------------|
+| `Count[Entities]` | Total count | `CountQuotations()` | `CountQuotations()` |
+| `Count[Entities]By[Criteria]` | Filtered count | `CountQuotationsByStatus()` | `CountQuotationsByStatus()` |
+
+### 4.5 Range and Date-Based Queries
+Standardized patterns for time and numerical range queries.
+
+| **Pattern** | **Usage** | **Repository Example** |
+|-------------|-----------|------------------------|
+| `Get[Entities]By[DateType]Range` | Date range queries | `GetQuotationsByExpiryRange()` |
+| `Get[Entities]Between[Criteria]` | Numerical ranges | `GetQuotationsBetweenAmounts()` |
+
+**Recommended Parameter Names:**
+- Use `startDate, endDate` for date ranges
+- Use `minAmount, maxAmount` for monetary ranges
+- Use `fromValue, toValue` for generic numerical ranges
+
+---
+
 ## Additional Best Practices
 1. **Consistency is key**: Stick to one naming style across the codebase.  
 2. **Avoid synonyms**: Use `Get` everywhere (not `Fetch`, `Retrieve`, etc.).  
