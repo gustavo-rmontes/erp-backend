@@ -26,7 +26,7 @@ type SalesOrderRepository interface {
 	GetSalesOrdersByContact(ctx context.Context, contactID int, params *pagination.PaginationParams) (*pagination.PaginatedResult, error)
 	GetSalesOrdersByQuotation(ctx context.Context, quotationID int, params *pagination.PaginationParams) (*pagination.PaginatedResult, error)
 	GetSalesOrdersByPeriod(ctx context.Context, startDate, endDate time.Time, params *pagination.PaginationParams) (*pagination.PaginatedResult, error)
-	GetSalesOrdersByExpectedDate(ctx context.Context, startDate, endDate time.Time, params *pagination.PaginationParams) (*pagination.PaginatedResult, error)
+	GetSalesOrdersByDateRange(ctx context.Context, startDate, endDate time.Time, params *pagination.PaginationParams) (*pagination.PaginatedResult, error)
 
 	// Busca avançada (opcional, considere mover para serviço se contiver muita lógica de negócio)
 	SearchSalesOrders(ctx context.Context, filter SalesOrderFilter, params *pagination.PaginationParams) (*pagination.PaginatedResult, error)
@@ -79,8 +79,15 @@ func (r *salesOrderRepository) CreateSalesOrder(ctx context.Context, salesOrder 
 		return errors.WrapError(ctx.Err(), "contexto expirou após iniciar transação")
 	}
 
-	// Cria o sales order
-	if err := tx.Create(salesOrder).Error; err != nil {
+	// Cria o sales order, omitindo quotation_id se for 0 (para permitir NULL)
+	var err error
+	if salesOrder.QuotationID == 0 {
+		err = tx.Omit("quotation_id").Create(salesOrder).Error
+	} else {
+		err = tx.Create(salesOrder).Error
+	}
+
+	if err != nil {
 		tx.Rollback()
 		r.logger.Error("erro ao criar sales order", zap.Error(err))
 		return errors.WrapError(err, "falha ao criar sales order")
@@ -189,7 +196,16 @@ func (r *salesOrderRepository) UpdateSalesOrder(ctx context.Context, id int, sal
 
 	// Atualiza os campos
 	salesOrder.ID = id
-	if err := r.db.WithContext(ctx).Save(salesOrder).Error; err != nil {
+
+	// Trata QuotationID = 0 como omissão (para manter NULL no banco)
+	var err error
+	if salesOrder.QuotationID == 0 {
+		err = r.db.WithContext(ctx).Omit("quotation_id").Save(salesOrder).Error
+	} else {
+		err = r.db.WithContext(ctx).Save(salesOrder).Error
+	}
+
+	if err != nil {
 		r.logger.Error("erro ao atualizar sales order", zap.Error(err), zap.Int("id", id))
 		return errors.WrapError(err, "falha ao atualizar sales order")
 	}
