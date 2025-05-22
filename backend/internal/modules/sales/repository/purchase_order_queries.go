@@ -5,6 +5,7 @@ import (
 	contact "ERP-ONSMART/backend/internal/modules/contact/models"
 	"ERP-ONSMART/backend/internal/modules/sales/models"
 	"ERP-ONSMART/backend/internal/utils/pagination"
+	"context"
 	"time"
 
 	"go.uber.org/zap"
@@ -28,8 +29,38 @@ type PurchaseOrderFilter struct {
 	SalesOrderID      int
 }
 
+// GetAllPurchaseOrders retorna todos os purchase orders com paginação
+func (r *purchaseOrderRepository) GetAllPurchaseOrders(ctx context.Context, params *pagination.PaginationParams) (*pagination.PaginatedResult, error) {
+	var purchaseOrders []models.PurchaseOrder
+	var total int64
+
+	// Query base
+	query := r.db.Model(&models.PurchaseOrder{})
+
+	// Conta o total
+	if err := query.Count(&total).Error; err != nil {
+		r.logger.Error("erro ao contar purchase orders", zap.Error(err))
+		return nil, errors.WrapError(err, "falha ao contar purchase orders")
+	}
+
+	// Aplica paginação e busca os dados
+	offset := pagination.CalculateOffset(params.Page, params.PageSize)
+	if err := query.Preload("Contact").
+		Preload("Items").
+		Order("created_at DESC").
+		Limit(params.PageSize).
+		Offset(offset).
+		Find(&purchaseOrders).Error; err != nil {
+		r.logger.Error("erro ao buscar purchase orders", zap.Error(err))
+		return nil, errors.WrapError(err, "falha ao buscar purchase orders")
+	}
+
+	result := pagination.NewPaginatedResult(total, params.Page, params.PageSize, purchaseOrders)
+	return result, nil
+}
+
 // GetPurchaseOrdersByStatus busca purchase orders por status
-func (r *purchaseOrderRepository) GetPurchaseOrdersByStatus(status string, params *pagination.PaginationParams) (*pagination.PaginatedResult, error) {
+func (r *purchaseOrderRepository) GetPurchaseOrdersByStatus(ctx context.Context, status string, params *pagination.PaginationParams) (*pagination.PaginatedResult, error) {
 	var purchaseOrders []models.PurchaseOrder
 	var total int64
 
@@ -57,7 +88,7 @@ func (r *purchaseOrderRepository) GetPurchaseOrdersByStatus(status string, param
 }
 
 // GetPurchaseOrdersByContact busca purchase orders por contato
-func (r *purchaseOrderRepository) GetPurchaseOrdersByContact(contactID int, params *pagination.PaginationParams) (*pagination.PaginatedResult, error) {
+func (r *purchaseOrderRepository) GetPurchaseOrdersByContact(ctx context.Context, contactID int, params *pagination.PaginationParams) (*pagination.PaginatedResult, error) {
 	var purchaseOrders []models.PurchaseOrder
 	var total int64
 
@@ -86,7 +117,7 @@ func (r *purchaseOrderRepository) GetPurchaseOrdersByContact(contactID int, para
 }
 
 // GetPurchaseOrdersBySalesOrder busca purchase orders por sales order
-func (r *purchaseOrderRepository) GetPurchaseOrdersBySalesOrder(salesOrderID int, params *pagination.PaginationParams) (*pagination.PaginatedResult, error) {
+func (r *purchaseOrderRepository) GetPurchaseOrdersBySalesOrder(ctx context.Context, salesOrderID int, params *pagination.PaginationParams) (*pagination.PaginatedResult, error) {
 	var purchaseOrders []models.PurchaseOrder
 	var total int64
 
@@ -116,7 +147,7 @@ func (r *purchaseOrderRepository) GetPurchaseOrdersBySalesOrder(salesOrderID int
 }
 
 // GetPurchaseOrdersByPeriod busca purchase orders por período (usando created_at)
-func (r *purchaseOrderRepository) GetPurchaseOrdersByPeriod(startDate, endDate time.Time, params *pagination.PaginationParams) (*pagination.PaginatedResult, error) {
+func (r *purchaseOrderRepository) GetPurchaseOrdersByPeriod(ctx context.Context, startDate, endDate time.Time, params *pagination.PaginationParams) (*pagination.PaginatedResult, error) {
 	var purchaseOrders []models.PurchaseOrder
 	var total int64
 
@@ -146,7 +177,7 @@ func (r *purchaseOrderRepository) GetPurchaseOrdersByPeriod(startDate, endDate t
 }
 
 // GetPurchaseOrdersByExpectedDateRange busca purchase orders por data esperada
-func (r *purchaseOrderRepository) GetPurchaseOrdersByExpectedDateRange(startDate, endDate time.Time, params *pagination.PaginationParams) (*pagination.PaginatedResult, error) {
+func (r *purchaseOrderRepository) GetPurchaseOrdersByExpectedDateRange(ctx context.Context, startDate, endDate time.Time, params *pagination.PaginationParams) (*pagination.PaginatedResult, error) {
 	var purchaseOrders []models.PurchaseOrder
 	var total int64
 
@@ -176,7 +207,7 @@ func (r *purchaseOrderRepository) GetPurchaseOrdersByExpectedDateRange(startDate
 }
 
 // GetPurchaseOrdersByContactType busca purchase orders por tipo de contato
-func (r *purchaseOrderRepository) GetPurchaseOrdersByContactType(contactType string, params *pagination.PaginationParams) (*pagination.PaginatedResult, error) {
+func (r *purchaseOrderRepository) GetPurchaseOrdersByContactType(ctx context.Context, contactType string, params *pagination.PaginationParams) (*pagination.PaginatedResult, error) {
 	var purchaseOrders []models.PurchaseOrder
 	var total int64
 
@@ -219,7 +250,7 @@ func (r *purchaseOrderRepository) GetPurchaseOrdersByContactType(contactType str
 }
 
 // GetPendingPurchaseOrders busca purchase orders pendentes
-func (r *purchaseOrderRepository) GetPendingPurchaseOrders(params *pagination.PaginationParams) (*pagination.PaginatedResult, error) {
+func (r *purchaseOrderRepository) GetPendingPurchaseOrders(ctx context.Context, params *pagination.PaginationParams) (*pagination.PaginatedResult, error) {
 	var purchaseOrders []models.PurchaseOrder
 	var total int64
 
@@ -248,7 +279,7 @@ func (r *purchaseOrderRepository) GetPendingPurchaseOrders(params *pagination.Pa
 }
 
 // GetOverduePurchaseOrders busca purchase orders vencidos
-func (r *purchaseOrderRepository) GetOverduePurchaseOrders(params *pagination.PaginationParams) (*pagination.PaginatedResult, error) {
+func (r *purchaseOrderRepository) GetOverduePurchaseOrders(ctx context.Context, params *pagination.PaginationParams) (*pagination.PaginatedResult, error) {
 	var purchaseOrders []models.PurchaseOrder
 	var total int64
 
@@ -278,7 +309,7 @@ func (r *purchaseOrderRepository) GetOverduePurchaseOrders(params *pagination.Pa
 }
 
 // SearchPurchaseOrders busca purchase orders com filtros combinados
-func (r *purchaseOrderRepository) SearchPurchaseOrders(filter PurchaseOrderFilter, params *pagination.PaginationParams) (*pagination.PaginatedResult, error) {
+func (r *purchaseOrderRepository) SearchPurchaseOrders(ctx context.Context, filter PurchaseOrderFilter, params *pagination.PaginationParams) (*pagination.PaginatedResult, error) {
 	var purchaseOrders []models.PurchaseOrder
 	var total int64
 
